@@ -1,6 +1,6 @@
-/* Lattice — design tokens (v0, zero-accent)
-   Ultra-minimal: monochrome, one typeface, one unit, hairlines only.
-   The grid is the only graphic; nothing is ever drawn. */
+/* Selfhold — design tokens (docs/brand/guidebook.md)
+   Minimal: monochrome, the system's sans, one unit, hairlines.
+   The grid and the mark are the only graphics; icons are functional, never decorative. */
 
 :root {
   /* color — monochrome only, no accent */
@@ -8,8 +8,9 @@
   --ink:   #0a0a0a;
   --line:  #e6e6e6;
 
-  /* type — one family (monospace) */
-  --font: ui-monospace, "Berkeley Mono", "JetBrains Mono", SFMono-Regular, Menlo, monospace;
+  /* type — the system's sans; monospace only for raw data */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, Cantarell, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --fs-12: 0.75rem;  --fs-14: 0.875rem; --fs-16: 1rem;
   --fs-20: 1.25rem;  --fs-28: 1.75rem;  --fs-44: 2.75rem;
   --lh-body: 1.5; --lh-display: 1.1; --track-display: 0.08em;
@@ -31,7 +32,9 @@
 * { box-sizing: border-box; }
 html { font-family: var(--font); font-size: 16px; line-height: var(--lh-body);
   -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--paper); color: var(--ink);
+/* Chrome gives an extension page's body its own font and a 75% size; the
+   tokens decide both, on body, so nothing injected does. */
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font); font-size: var(--fs-12);
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 
 /* type */
@@ -68,11 +71,7 @@ table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: var(--s-2) var(--s-3); border-bottom: var(--rule); }
 th { font-weight: 600; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
-code, pre { font-family: var(--font); }
+code, pre { font-family: var(--mono); }
 
-/* the one permitted "graphic": the dot-lattice. use once (hero/footer). */
-.lattice-bg { background-image: radial-gradient(var(--line) 1px, transparent 1px);
-  background-size: var(--s-2) var(--s-2); }
-
-/* wordmark — the logo is just the word */
+/* wordmark — the word in the interface type; the mark is drawn (popup/mark.ts) */
 .wordmark { text-transform: uppercase; letter-spacing: var(--track-display); font-weight: 600; }
