@@ -90,9 +90,9 @@ text in fields; never set body text in grey.
 Roboto or Cantarell elsewhere, with nothing shipped or fetched. This is what
 people have always seen in Selfhold: Chrome injects `body { font-family:
 system-ui, sans-serif; font-size: 75% }` into extension pages, and that
-overrides the monospace `tokens.css` sets on `html`. The tokens are to follow
-this guidebook: set the system stack on `body`, so no injected rule decides
-for us.
+overrides any font set on `html`. So `tokens.css` sets the family and size
+on `body` itself, and nothing injected decides. Raw data (a transaction's
+JSON) is the one place for monospace, `--mono`.
 
 - Amounts, nonces and counts use tabular numerals
   (`font-variant-numeric: tabular-nums`).
@@ -239,9 +239,10 @@ before the next:
 1. Welcome: the stacked lockup with the mark at 96; the 18 px mark in the top
    bar during onboarding.
 2. Unlock: the lockup with the mark at 56, replacing the old "WALLET".
-3. Type: the system sans set on `body` in `tokens.css`, and the header rule
-   rewritten to "The grid and the mark are the only graphics; icons are
-   functional, never decorative."
+3. Type: the system sans and its size set on `body` in `tokens.css`, the
+   header rule rewritten to "The grid and the mark are the only graphics;
+   icons are functional, never decorative.", and the unused dot-grid class
+   removed.
 4. Icons: one module for the vocabulary, with the 1 px rule built in, and
    the three existing icons moved onto it.
 5. Activity states.
