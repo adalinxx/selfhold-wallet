@@ -78,7 +78,7 @@ label.k { display: block; margin-bottom: var(--s-1); font-size: var(--fs-12); te
   display: inline-grid; flex: 0 0 32px; width: 32px; height: 32px;
   place-items: center; padding: 0;
 }
-.action-icon { display: block; width: 16px; height: 16px; }
+.icon { display: block; flex: none; }
 .transaction-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--s-2); }
 .transaction-heading h1 { margin: 0; }
 .transaction-list { border: var(--rule); }

@@ -248,9 +248,9 @@ test("sell-order UI refuses a stale review and never re-signs after an uncertain
 
   for (const label of ["Refresh balance", "Copy account address", "Send", "Receive"]) button(label);
   assert.equal(button("Refresh balance").textContent, "", "refresh is an icon-only action");
-  assert.ok(button("Refresh balance").querySelector("svg.action-icon"));
+  assert.ok(button("Refresh balance").querySelector("svg.icon"));
   assert.equal(button("Copy account address").textContent, "", "copy is an icon-only action");
-  assert.ok(button("Copy account address").querySelector("svg.action-icon"));
+  assert.ok(button("Copy account address").querySelector("svg.icon"));
   for (const hidden of ["Scan cross-chain order", "Transactions", "Settings", "Node", "Fee", "Backup", "Lock"]) {
     assert.equal([...document.querySelectorAll("#view button")].some((item) => item.textContent === hidden), false, `${hidden} stays off the home screen`);
   }

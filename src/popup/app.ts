@@ -21,6 +21,7 @@ import { textSvg } from "../lib/qr/render.ts";
 import { isAccountAddress, LABEL_MAX } from "../lib/wallet/session.ts";
 import { replacementTransfer } from "../lib/wallet/replacement.ts";
 import { brandMark } from "./mark.ts";
+import { icon } from "./icons.ts";
 
 export interface Platform {
   /** The signer: the extension's background worker, or the desktop app's in-page signer. */
@@ -126,35 +127,6 @@ export const h = (tag: string, attrs: Record<string, unknown> = {}, ...kids: (No
   for (const kid of kids) if (kid != null) n.append(kid as Node | string);
   return n;
 };
-type ActionIcon = "copy" | "refresh" | "edit";
-/** Familiar Lucide action geometry, redrawn at Lattice's hairline weight. */
-function actionIcon(name: ActionIcon): SVGSVGElement {
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg");
-  for (const [key, value] of Object.entries({
-    class: "action-icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
-    "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round",
-    "aria-hidden": "true", focusable: "false",
-  })) svg.setAttribute(key, value);
-  const shape = (tag: "path" | "rect", attributes: Record<string, string>) => {
-    const node = document.createElementNS(ns, tag);
-    for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
-    svg.append(node);
-  };
-  if (name === "refresh") {
-    shape("path", { d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" });
-    shape("path", { d: "M21 3v5h-5" });
-    shape("path", { d: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" });
-    shape("path", { d: "M8 16H3v5" });
-  } else if (name === "edit") {
-    shape("path", { d: "M21.17 6.81a1 1 0 0 0-3.98-3.98L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z" });
-    shape("path", { d: "m15 5 4 4" });
-  } else {
-    shape("rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" });
-    shape("path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" });
-  }
-  return svg;
-}
 const short = (s: string) => (s.length <= 22 ? s : `${s.slice(0, 12)}…${s.slice(-8)}`);
 // Exact: amounts are UInt64, never rounded through a double.
 const fmt = (n: string | bigint) => BigInt(n).toLocaleString();
@@ -1180,7 +1152,7 @@ async function mainScreen() {
           h("button", {
             class: "btn icon-action", type: "button", title: "Refresh balance", "aria-label": "Refresh balance",
             onclick: () => loadBalance(),
-          }, actionIcon("refresh")),
+          }, icon("refresh")),
         ),
         h("span", { class: "balance-value" }, balanceV),
         h("div", { class: "account-line" },
@@ -1191,7 +1163,7 @@ async function mainScreen() {
           h("button", {
             class: "btn icon-action", type: "button", title: "Rename account", "aria-label": "Rename account",
             onclick: () => renameInPlace(),
-          }, actionIcon("edit")),
+          }, icon("edit")),
           h("button", {
             class: "btn icon-action", type: "button", title: "Copy account address", "aria-label": "Copy account address",
             onclick: async () => {
@@ -1202,7 +1174,7 @@ async function mainScreen() {
                 toast.textContent = "Could not copy the account address.";
               }
             },
-          }, actionIcon("copy")),
+          }, icon("copy")),
         ),
       ),
       h("div", { class: "primary-actions" },
@@ -2317,7 +2289,7 @@ function pendingSubmissionsScreen() {
         try { await navigator.clipboard.writeText(transaction.cid); message.textContent = "Transaction ID copied."; }
         catch { message.textContent = "Could not copy. Select the transaction ID above."; }
       },
-    }, actionIcon("copy")));
+    }, icon("copy")));
     const row = h("details", { class: "transaction-item" }, h("summary", {},
       h("div", { class: "transaction-summary" },
         h("div", { class: "transaction-line" }, h("span", { class: "transaction-title" }, replacesCID ? "Fee replacement" : transaction.to.startsWith("buy on ") ? "Purchase payment" : transaction.to.startsWith("sell on ") ? "Sell order" : "Sent"), h("span", { class: "transaction-amount" }, fmt(transaction.amount))),
@@ -2398,7 +2370,7 @@ function pendingSubmissionsScreen() {
       } catch { refreshNotice.textContent = "Could not refresh saved transactions. Try again."; }
       finally { refreshButton.disabled = false; }
     },
-  }, actionIcon("refresh")) as HTMLButtonElement;
+  }, icon("refresh")) as HTMLButtonElement;
   render(h("div", { class: "stack" },
     h("div", { class: "transaction-heading" }, h("h1", {}, "Transactions"), refreshButton),
     h("p", { class: "muted" }, `Local sent history for ${settings.chain}, plus saved recovery across chains. Not a complete on-chain history.`),
