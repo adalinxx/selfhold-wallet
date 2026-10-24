@@ -2,8 +2,8 @@
 
 Selfhold is the wallet for Lattice, previously named Lattice Wallet. Existing installations update through the same Chrome Web Store item.
 
-Read the documentation at [lattice.build/docs](https://lattice.build/docs/use/). It is published from the
-Markdown in this repository; edit it here.
+The wallet pages at [lattice.build/docs](https://lattice.build/docs/use/) (node trust, network binding,
+backup formats, privacy policy) are published from `docs/` here; edit them here.
 
 See [network binding and replay](docs/network-binding.md) before reusing keys on separate networks.
 
