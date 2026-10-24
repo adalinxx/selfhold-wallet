@@ -229,6 +229,14 @@ test("wallet UI e2e: onboarding validation, secret handoff, lock, and keyboard u
   const store = memoryStore();
   await startWallet({ wallet, store: store.api, ownNode: "http://127.0.0.1:8080", fetch: nodeFetch(), requestOrigins: async () => true });
   assert.equal(document.querySelector(".wordmark")?.textContent, "SELFHOLD");
+  // Welcome shows the mark above the wordmark, beside it in words, so hidden from
+  // screen readers; the corner shows it alone, named, until the wallet is open.
+  const hero = document.querySelector(".hero svg.mark")!;
+  assert.equal(hero.getAttribute("width"), "96");
+  assert.equal(hero.getAttribute("aria-hidden"), "true");
+  assert.equal(document.querySelector("#brand-mark svg")?.getAttribute("aria-label"), "Selfhold");
+  assert.equal(document.getElementById("brand-mark")!.hidden, false);
+  assert.equal(document.getElementById("settings-button")!.hidden, true);
 
   button("Create wallet").click();
   input("password (min 8)").value = "short";
@@ -779,7 +787,9 @@ test("before there is a wallet, the header offers nothing that would do nothing"
   installDOM();
   const wallet = walletFor({ initialized: false, locked: true, accounts: [], active: null });
   await startWallet({ wallet, store: memoryStore().api, ownNode: "http://127.0.0.1:8080", fetch: nodeFetch(), requestOrigins: async () => true });
-  for (const id of ["settings-button", "net-badge"]) assert.equal(document.getElementById(id)!.style.visibility, "hidden", id);
+  assert.equal(document.getElementById("settings-button")!.hidden, true);
+  assert.equal(document.getElementById("net-badge")!.style.visibility, "hidden");
+  assert.equal(document.getElementById("brand-mark")!.hidden, false, "the mark stands alone instead");
 });
 
 test("wallet UI e2e: the account is renamed where its name is shown, and Escape keeps the old name", async () => {
