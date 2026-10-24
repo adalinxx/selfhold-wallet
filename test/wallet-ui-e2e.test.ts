@@ -289,6 +289,11 @@ test("wallet UI e2e: onboarding validation, secret handoff, lock, and keyboard u
   assert.equal(created?.password, "correct horse");
   assert.equal(created?.mnemonic, phrase);
   assert.doesNotMatch(document.body.textContent ?? "", new RegExp(phrase.split(" ")[0]! + " " + phrase.split(" ")[1]!));
+  // The milestone: the mark at 96 over one line, then on.
+  assert.equal(document.querySelector("h1.wordmark")?.textContent, "Wallet created");
+  assert.equal(document.querySelector(".hero.milestone svg.mark")?.getAttribute("width"), "96");
+  button("Continue").click();
+  await settle();
 
   (document.getElementById("settings-button") as HTMLButtonElement).click();
   button("Lock wallet").click();

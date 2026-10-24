@@ -727,8 +727,22 @@ function showMnemonic(password: string) {
       h("h1", {}, "Recovery phrase"),
       h("p", { class: "warn" }, "Write these 12 words down, in order, and keep them offline. Anyone with them controls your funds."),
       h("div", { class: "mnemonic" }, phrase),
-      h("button", { class: "block", onclick: async () => { const r = await wallet.create(password, { mnemonic: phrase }); if (r.ok) { st = r.state; route(); } } }, "I saved it — create"),
+      h("button", { class: "block", onclick: async () => { const r = await wallet.create(password, { mnemonic: phrase }); if (r.ok) { st = r.state; walletCreated(); } } }, "I saved it — create"),
       h("button", { class: "btn block", onclick: createFlow }, "Back"),
+    ),
+  );
+}
+
+/**
+ * A milestone (docs/brand/guidebook.md §7): the mark at 96, revealed once,
+ * then one line. The only celebration; a routine send never gets one.
+ */
+function walletCreated() {
+  render(
+    h("div", { class: "stack" },
+      h("div", { class: "hero milestone" }, brandMark(96), h("h1", { class: "wordmark" }, "Wallet created")),
+      h("p", { class: "muted center" }, "Your keys live on this device, and your 12 words bring them back anywhere."),
+      h("button", { class: "block", onclick: route }, "Continue"),
     ),
   );
 }
