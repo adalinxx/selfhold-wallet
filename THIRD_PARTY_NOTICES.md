@@ -2,7 +2,7 @@
 
 ## Lucide icons
 
-The refresh and copy action icon geometry is adapted from Lucide.
+The action and state icon geometry (the interface and `scripts/render-brand-specimens.mjs`) is adapted from Lucide.
 
 ISC License
 

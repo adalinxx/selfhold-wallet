@@ -14,7 +14,8 @@
     "package": "node scripts/package.mjs",
     "watch": "node build.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "icons": "node scripts/render-selfhold-icons.mjs"
+    "icons": "node scripts/render-selfhold-icons.mjs",
+    "specimens": "node scripts/render-brand-specimens.mjs"
   },
   "dependencies": {
     "@adalinxx/lattice-client": "file:vendor/lattice-sdk/packages/client",
