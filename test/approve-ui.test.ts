@@ -79,6 +79,7 @@ test("a payment leads with the total, its parts, and the balance after; addresse
   assert.deepEqual(all(dom, ".breakdown .amount"), ["250", "1"], "the parts, adding up to the total");
   assert.ok(summary.includes("in record own/a/berlin/A12"), "the payee is the address in the record the write changes");
   assert.equal(dom.window.document.querySelector(".summary .notice"), null, "no warning for a payee a record names");
+  assert.equal(dom.window.document.querySelector(".decision.danger"), null, "nor a turned-round decision");
   assert.equal(one(dom, ".records:not(.raw) li .meta"), "payee@250 → you");
   assert.deepEqual(all(dom, ".records:not(.raw) .name"), ["payee", "you"]);
   const details = one(dom, "details.advanced");
@@ -133,6 +134,8 @@ test("a payee no record names is shown whole, grouped, with a warning next to it
   const row = one(dom, ".breakdown .to");
   assert.ok(row.includes("an address the page chose"));
   assert.ok(row.includes("Check every group of it before you pay."));
+  assert.ok(dom.window.document.querySelector(".breakdown .notice.danger"), "an address only the page vouches for is a danger");
+  assert.ok(dom.window.document.querySelector(".decision.danger"), "and declining becomes the filled choice");
   assert.equal(all(dom, ".breakdown .groups").join(""), stranger, "the whole address, in groups of four");
 });
 
@@ -171,7 +174,9 @@ test("a message is shown in full, line by line, with hidden characters made visi
 
 test("a message naming another site says so", async () => {
   const { dom } = await open({ method: "signMessage", params: { text: "bank.example wants you to sign in with your account:\nURI: https://bank.example/login" } }, "0");
-  assert.equal(one(dom, ".notice"), "This message names bank.example, but fanfare.example is asking. Sign only if you expect that.");
+  assert.equal(one(dom, ".notice.warning .notice-text"), "This message names bank.example, but fanfare.example is asking. Sign only if you expect that.");
+  assert.equal(one(dom, ".notice.warning .tier"), "Warning");
+  assert.equal(dom.window.document.querySelector(".decision.danger"), null, "a warning leaves the decision as it is");
 });
 
 test("payments no record names come first, numbered as shown", async () => {

@@ -183,7 +183,11 @@ the check only once it is confirmed.
 |---|---|---|
 | Note | A hairline box (`--line`) and the word NOTE | Unchanged |
 | Warning | An ink outline, `triangle-alert` and the word WARNING | Unchanged |
-| Danger | A filled, inverted banner, `triangle-alert` and DANGER | The safe choice (REJECT) becomes the filled button, and the risky one is outlined |
+| Danger | A filled, inverted banner, `triangle-alert` and DANGER | The safe choice (Decline) becomes the filled button, and the risky one is outlined |
+
+In the approval window today: a payment to an address no record in the write
+names is a danger; a message that names another site than the one asking is a
+warning. Errors stay plain boxes: they are not risks to weigh.
 
 The message names the specific risk ("This request pays an address you have
 never paid"), never a generic "Be careful". Specific, varied warnings resist

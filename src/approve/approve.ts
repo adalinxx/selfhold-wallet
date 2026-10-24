@@ -16,6 +16,7 @@ import { defaultFee, loadSettings } from "../lib/wallet/settings.ts";
 import { chosenNodes, discoveryStarts, knownPending, livePageWrites, nextNonce, type PageWrite } from "../lib/wallet/nonce.ts";
 import { browserFetch, chainNodes, reader, recordsPresent, sentStatus } from "../lib/wallet/node.ts";
 import { ALL_HTTPS_ORIGINS, originPattern } from "../lib/config.ts";
+import { icon } from "../popup/icons.ts";
 
 const id = new URLSearchParams(location.search).get("id") ?? "";
 const view = document.getElementById("view")!;
@@ -179,6 +180,16 @@ async function decide(approve: boolean, address?: string, nonce?: { nonce: bigin
 // meanwhile, so a button that waits is not mistaken for a broken one.
 const ARM_MS = 800;
 /**
+ * A risk, at its tier (docs/brand/guidebook.md §6): told apart by ink weight,
+ * never color. A warning is outlined in ink; a danger is inverted, and turns
+ * the decision round (see `decision`). The message names the specific risk.
+ */
+function notice(tier: "warning" | "danger", message: string) {
+  return el("p", { className: `notice ${tier}` }, icon("warning"),
+    el("span", {}, el("strong", { className: "tier", textContent: tier === "danger" ? "Danger" : "Warning" }), el("span", { className: "notice-text", textContent: message })));
+}
+
+/**
  * The decision, kept at the foot of the window so it is never scrolled away
  * from what it decides: a line saying why the approving button waits, when
  * it does, then Decline and the one filled button, named for what it does.
@@ -314,7 +325,7 @@ async function render() {
       el("p", { className: "from" }, "from ", site(origin), ` · signing as ${who}`),
       label("Message"),
       message,
-      ...(elsewhere.length ? [el("p", { className: "notice", textContent: `This message names ${elsewhere.join(", ")}, but ${host} is asking. Sign only if you expect that.` })] : []),
+      ...(elsewhere.length ? [notice("warning", `This message names ${elsewhere.join(", ")}, but ${host} is asking. Sign only if you expect that.`)] : []),
       explanation,
       el("details", { className: "advanced" }, el("summary", { textContent: "Details" }), el("div", { className: "advanced-content kv" },
         accountDetail,
@@ -405,6 +416,9 @@ function reviewWrite(mine: number, write: WriteRequest, address: string, origin:
   };
   const gate = reviewGate(() => explain());
   const bar = decision(approveLabel, () => { sign().catch((e) => fail(String(e?.message ?? e))); }, () => !signing && covered(nonceRead) && gate.seen());
+  // Paying an address only the page vouches for is a danger: declining is the
+  // filled button, and paying is outlined.
+  if (namedBy.some((record) => !record)) bar.classList.add("danger");
   /** The one line the bar shows: why the account stops it (showRead), else what is left to see. */
   function explain() {
     if ("nonce" in nonceRead && nonceRead.balance >= debit) {
@@ -460,7 +474,7 @@ function reviewWrite(mine: number, write: WriteRequest, address: string, origin:
       return record
         ? line(p.amount, el("div", {}, "to ", payee), el("div", { className: "meta" }, "in record ", named(record, names, 60)), el("div", { className: "meta", textContent: shortAddress(p.to) }))
         : line(p.amount, el("div", {}, "to ", payee, ", an address the page chose"), el("div", { className: "meta" }, fullAddress(p.to)),
-          el("p", { className: "notice", textContent: "No record in this write names this address. Check every group of it before you pay." }));
+          notice("danger", "No record in this write names this address. Check every group of it before you pay."));
     }),
     ...(payments.length && BigInt(fee) > 0n ? [line(fee, "network fee")] : []),
   ];

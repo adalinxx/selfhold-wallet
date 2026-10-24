@@ -16,6 +16,11 @@ p.meta, div.meta { margin-bottom: 0; overflow-wrap: anywhere; }
 .breakdown .amount { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
 .breakdown .to { min-width: 0; }
 .breakdown .notice { margin: var(--s-2) 0 0; }
+/* Risks by ink weight (docs/brand/guidebook.md §6): warning outlined, danger inverted. */
+.notice { display: flex; gap: var(--s-2); align-items: flex-start; padding: var(--s-2) var(--s-3); border: 1px solid var(--ink); font-size: var(--fs-12); }
+.notice .icon { margin-top: 1px; }
+.notice .tier { font-weight: 600; text-transform: uppercase; letter-spacing: var(--track-display); margin-right: var(--s-2); }
+.notice.danger { background: var(--ink); color: var(--paper); }
 
 /* An address the wallet knows, shown as its name: inverted, as no text a page sends can be. */
 .name { background: var(--ink); color: var(--paper); padding: 0 var(--s-1); white-space: nowrap; }
@@ -50,3 +55,7 @@ p.meta, div.meta { margin-bottom: 0; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { .btn--primary.arming::after { animation: none; width: 100%; } }
 /* Content runs on under the bar: the status line says so, as a way down. */
 .decision .status .text-action { font-size: var(--fs-12); }
+/* On a danger the safe choice is the filled button. */
+.decision.danger .actions-row > .btn:first-child { background: var(--ink); color: var(--paper); }
+.decision.danger .actions-row > .btn--primary { background: transparent; color: var(--ink); }
+.decision.danger .btn--primary.arming::after { background: var(--ink); }
