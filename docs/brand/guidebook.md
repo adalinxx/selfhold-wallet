@@ -199,9 +199,10 @@ the habituation that makes people click through.
    (filled) and RESTORE OR IMPORT (outlined). No illustration.
 2. **Unlock:** the stacked lockup (mark 56), the password field, then UNLOCK.
    A wrong password says so in words under the field.
-3. **Milestones:** wallet created and backup confirmed show the mark at 96
-   with one reveal (see §8), then a single line such as BACKUP CONFIRMED.
-   These are the only celebrations. A routine send is never celebrated.
+3. **Milestones:** wallet created shows the mark at 96 with one reveal (see
+   §8), the words WALLET CREATED, one line, then CONTINUE. Backup confirmed
+   joins it once the wallet has a backup check to confirm. These are the only
+   celebrations. A routine send is never celebrated.
 4. **Everywhere else:** the 18 px mark in the top bar, and nothing more.
 
 **Empty states:** a 32 px glyph from the vocabulary, a title, one line, and at

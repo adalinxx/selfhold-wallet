@@ -38,6 +38,11 @@ h1 { font-size: var(--fs-20); margin: 0 0 var(--s-3); }
 /* Unlock: the same lockup smaller, mark 56 over the wordmark at 20. */
 .hero.gate .mark { margin-bottom: var(--s-3); }
 .hero.gate .wordmark { font-size: var(--fs-20); margin: 0; }
+/* A milestone: the mark revealed once, never looped (docs/brand/guidebook.md §8). */
+.hero.milestone .wordmark { font-size: var(--fs-20); margin: 0; }
+.hero.milestone .mark { animation: reveal 500ms ease-out both; }
+@keyframes reveal { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .hero.milestone .mark { animation: none; } }
 
 button.block, .btn.block { display: block; width: 100%; text-align: center; }
 /* One filled button a screen: the step that moves it forward. Every other
