@@ -51,6 +51,7 @@ test("transactions UI: empty history is accessible from Activity", async () => {
   button("Transactions").click();
   assert.equal(document.querySelector("h1")?.textContent, "Transactions");
   assert.match(document.body.textContent ?? "", /No transactions yet/);
+  assert.equal(document.querySelector(".transaction-empty svg.icon")?.getAttribute("width"), "32", "an empty list: one 32 px glyph");
   assert.match(document.body.textContent ?? "", /Not a complete on-chain history/);
   button("Back").click();
   assert.equal(document.querySelector("h1")?.textContent, "Activity");
@@ -156,6 +157,8 @@ test("transactions UI: disconnected recovery remains visible, archived rows dedu
   assert.equal(rows.length, 2);
   assert.ok(rows.every((row) => !row.open));
   assert.match(rows[0]!.textContent ?? "", /Nexus\/offline.*Not connected/s);
+  assert.equal(rows[0]!.querySelector(".transaction-glyph svg"), null, "not read: no shape");
+  assert.equal(rows[0]!.querySelector(".transaction-amount")?.textContent, "−15");
   assert.equal(rows[0]!.querySelectorAll("button").length, 2, "copy and dismiss work without an endpoint");
   assert.match(rows[1]!.textContent ?? "", /Archived locally/);
   assert.match(rows[1]!.textContent ?? "", /Status unavailable|unknown to node/);
@@ -168,6 +171,36 @@ test("transactions UI: disconnected recovery remains visible, archived rows dedu
   (rows[0]!.querySelector(".text-action") as HTMLButtonElement).click();
   await settle();
   assert.equal(store.value.settings.pendingSubmissions.length, 1, "cancelled dismissal retains recovery");
+});
+
+test("transactions UI: each state is a shape beside its words, and amounts carry their sign", async () => {
+  installDOM();
+  const sent = (cid: string, nonce: string, at: number) => ({ cid, from: alice, to: bob, amount: "40", fee: "1", nonce, at });
+  const store = memoryStore({ sent: { Nexus: [sent("bafyin", "1", 3000), sent("bafypend", "3", 2000), sent("bafyrepl", "2", 1000)] } });
+  const normal = nodeFetch();
+  const projection = (cid: string, nonce: string, extra: Record<string, unknown> = {}) => json({
+    txCID: cid, nonce, signers: [alice], chainPath: ["Nexus"], accountActions: [], depositActions: [], receiptActions: [], withdrawalActions: [], ...extra });
+  const fetch = async (raw: string | URL, init?: RequestInit) => {
+    const path = new URL(raw).pathname;
+    if (path === "/api/transaction/bafyin") return projection("bafyin", "1", { blockHeight: "5", blockHash: "bafyblock", timestamp: "1" });
+    if (path === "/api/transaction/bafypend") return projection("bafypend", "3");
+    if (path === "/api/transaction/bafyrepl") return projection("bafyrepl", "2");
+    if (path === "/api/mempool") return json({ count: 1, transactions: ["bafypend"] });
+    return normal(raw, init);
+  };
+  await startWallet({ wallet: walletFor(openState()), store: store.api, fetch, requestOrigins: async () => true });
+  await settle(); button("Activity").click(); button("Transactions").click(); await settle();
+  const rows = [...document.querySelectorAll(".transaction-item")];
+  const shape = (row: Element) => row.querySelector(".transaction-glyph svg")?.innerHTML ?? "";
+  assert.equal(rows.length, 3);
+  assert.match(rows[0]!.textContent ?? "", /included in block 5/);
+  assert.match(shape(rows[0]!), /M7 7h10v10/, "in a block: the sent arrow");
+  assert.match(rows[1]!.textContent ?? "", /pending/);
+  assert.match(shape(rows[1]!), /circle/, "waiting: the clock");
+  assert.match(rows[2]!.textContent ?? "", /its nonce was spent by another transaction/);
+  assert.equal(shape(rows[2]!), "", "replaced: no shape, the words say it");
+  assert.ok(rows[2]!.classList.contains("replaced"), "and its amount is struck through");
+  for (const row of rows) assert.equal(row.querySelector(".transaction-amount")?.textContent, "−40");
 });
 
 function memoryStore(overrides: Record<string, unknown> = {}) {
