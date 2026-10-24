@@ -260,8 +260,9 @@ test("wallet UI e2e: onboarding validation, secret handoff, lock, and keyboard u
   (document.getElementById("settings-button") as HTMLButtonElement).click();
   button("Lock wallet").click();
   await settle();
-  assert.equal(document.querySelector(".wordmark")?.textContent, "WALLET");
-  assert.equal(document.querySelector("h1")?.textContent, "Unlock");
+  // Unlock is Selfhold's, mark over name; the old "WALLET" is gone.
+  assert.equal(document.querySelector("h1.wordmark")?.textContent, "SELFHOLD");
+  assert.equal(document.querySelector(".hero svg.mark")?.getAttribute("width"), "56");
   const password = input("password");
   password.value = "wrong";
   password.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -577,7 +578,7 @@ test("wallet UI e2e: a wallet opened locked on a child chain offers the way up o
   await startWallet({ wallet, store: store.api, ownNode: "http://127.0.0.1:8080", fetch: nodeFetch(), requestOrigins: async () => true });
   await settle();
   const badge = document.getElementById("net-badge") as HTMLButtonElement;
-  assert.equal(document.querySelector("h1")?.textContent, "Unlock");
+  assert.equal(document.querySelector("h1")?.textContent, "SELFHOLD", "the unlock screen");
   badge.click();
   await settle();
   assert.equal(document.querySelector(".chain-menu"), null, "nothing to navigate while locked");

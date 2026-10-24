@@ -35,6 +35,9 @@ h1 { font-size: var(--fs-20); margin: 0 0 var(--s-3); }
 .hero .wordmark { font-size: var(--fs-28); display: block; }
 /* The mark above the wordmark, a quarter of its size clear below it (docs/brand/guidebook.md §3). */
 .hero .mark { display: block; margin: 0 auto var(--s-4); }
+/* Unlock: the same lockup smaller, mark 56 over the wordmark at 20. */
+.hero.gate .mark { margin-bottom: var(--s-3); }
+.hero.gate .wordmark { font-size: var(--fs-20); margin: 0; }
 
 button.block, .btn.block { display: block; width: 100%; text-align: center; }
 /* One filled button a screen: the step that moves it forward. Every other

@@ -793,8 +793,8 @@ function unlockScreen() {
   p.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") submit(); });
   render(
     h("div", { class: "stack" },
-      h("div", { class: "hero" }, h("span", { class: "wordmark" }, "WALLET")),
-      h("h1", {}, "Unlock"),
+      // The mark over the name: the screen people see most often is Selfhold's.
+      h("div", { class: "hero gate" }, brandMark(56), h("h1", { class: "wordmark" }, "SELFHOLD")),
       p, err,
       h("button", { class: "block", onclick: submit }, "Unlock"),
     ),
