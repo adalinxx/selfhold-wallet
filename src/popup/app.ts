@@ -20,6 +20,7 @@ import { scanner, scannerFileTexts } from "./scanner.ts";
 import { textSvg } from "../lib/qr/render.ts";
 import { isAccountAddress, LABEL_MAX } from "../lib/wallet/session.ts";
 import { replacementTransfer } from "../lib/wallet/replacement.ts";
+import { brandMark } from "./mark.ts";
 
 export interface Platform {
   /** The signer: the extension's background worker, or the desktop app's in-page signer. */
@@ -186,13 +187,22 @@ export const render = (node: El) => {
   }
   showHeaderControls();
 };
-/** The header's controls act only on an open wallet with a node, so they are shown only then. */
+/**
+ * The header's controls act only on an open wallet with a node, so they are
+ * shown only then. Until then the mark stands in the corner alone: Selfhold's,
+ * and not a button.
+ */
 function showHeaderControls() {
   const usable = !!st?.initialized && !st.locked && !!settings && !!activeAccount() && !!endpoint();
-  for (const id of ["settings-button", "net-badge"]) {
-    const control = document.getElementById(id);
-    if (control) control.style.visibility = usable ? "" : "hidden";
+  const settingsButton = document.getElementById("settings-button");
+  if (settingsButton) {
+    let mark = document.getElementById("brand-mark");
+    if (!mark) { mark = h("span", { id: "brand-mark", class: "brand-mark" }, brandMark(18, "Selfhold")); settingsButton.before(mark); }
+    mark.hidden = usable;
+    settingsButton.hidden = !usable;
   }
+  const badge = document.getElementById("net-badge");
+  if (badge) badge.style.visibility = usable ? "" : "hidden";
 }
 const onSettingsScreen = () => !!document.getElementById("settings-screen");
 
@@ -692,7 +702,7 @@ function route() {
 function welcome() {
   render(
     h("div", { class: "stack" },
-      h("div", { class: "hero" }, h("span", { class: "wordmark" }, "SELFHOLD"), h("p", { class: "muted" }, "open-source. self-custodial. your keys, your control.")),
+      h("div", { class: "hero" }, brandMark(96), h("span", { class: "wordmark" }, "SELFHOLD"), h("p", { class: "muted" }, "open-source. self-custodial. your keys, your control.")),
       h("button", { class: "block", onclick: createFlow }, "Create wallet"),
       h("button", { class: "btn block", onclick: restoreChoice }, "Restore or import"),
     ),
