@@ -154,21 +154,28 @@ label is `aria-hidden="true" focusable="false"`.
 
 ![Activity states and warning tiers](specimens/states.svg)
 
-**Activity:** every state has its own shape and its own word, and amounts
-carry their sign. Color is never the only signal (WCAG 1.4.1), and here there
-is no color at all.
+**Activity** (the Transactions screen): every row says where it stands in
+words, carries a shape only when that is certain, and signs its amount.
+Color is never the only signal (WCAG 1.4.1), and here there is no color at
+all.
 
-| State | Glyph | Word | Amount | Inverted chip |
-|---|---|---|---|---|
-| Sent | `arrow-up-right` | SENT | − | none |
-| Received | `arrow-down-left` | RECEIVED | + | none |
-| Pending | `clock` | PENDING | − | the action, when there is one (SPEED UP) |
-| Failed | `x` | FAILED | − | the action, when there is one (RETRY) |
-| Replaced | none | REPLACED → | struck through | none; links to the transaction that replaced it |
-| Confirmed | `check` | CONFIRMED | | none |
+| Where it stands | Glyph | Amount |
+|---|---|---|
+| In a block | `arrow-up-right` (sent) | −40 |
+| Waiting: pending, or pending or dropped | `clock` | −40 |
+| Replaced: its nonce went to another transaction | none | struck through |
+| Unsure or not read: unknown to the node, nonce advanced, not connected | none | −40 |
+| Failed, only once known for certain | `x` | −40 |
+| Received, once the wallet shows incoming payments | `arrow-down-left` | +40 |
 
-A send's own screen says SUBMITTED with the pending glyph when the node takes
-it, and shows the check only once it is confirmed.
+The list stays plain: nothing in it is inverted. A row's actions (increase
+fee, resubmit, copy) sit in its opened details. The shape sits in a fixed
+16 px slot before the title, so titles line up with or without one.
+
+**Empty:** the empty-state anatomy of §7: a 32 px glyph, a title, one line.
+
+A send's own screen says it was submitted, with the pending glyph, and shows
+the check only once it is confirmed.
 
 **Warnings: ink weight, never color.**
 

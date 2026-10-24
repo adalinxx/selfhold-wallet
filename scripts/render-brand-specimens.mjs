@@ -69,22 +69,23 @@ const iconSheet = sheet(720, 60 + Math.ceil(names.length / 2) * 56, names.map((n
   return icon(name, x, y + 8) + icon(name, x + 32, y, 32) + text(x + 80, y + 14, ICONS[name].meaning, { cls: 'b' }) + text(x + 80, y + 32, ICONS[name].lucide, { size: 11 }).replace('<text', '<text opacity=".6"');
 }).join('') + text(20, 22, '16 PX AND 32 PX · STROKE 24 ÷ SIZE = 1 PX · LUCIDE 1.61.0', { size: 11, cls: 'b caps' }));
 
-// 4. States: activity rows, then warning tiers.
+// 4. States: activity rows as the Transactions screen draws them, then warning tiers.
 const tier = (name, message) => `<tspan font-weight="600" letter-spacing=".08em">${name.toUpperCase()}</tspan><tspan dx="12">${message}</tspan>`;
-const row = (y, glyph, label, amount, chip) => box(20, y, 680, 48) + icon(glyph, 36, y + 16) +
-  text(64, y + 29, label, { cls: 'caps b', size: 12 }) + text(500, y + 29, amount, { anchor: 'end', size: 14 }) +
-  (chip ? `<rect class="ink" x="${684 - chip.length * 8 - 16}" y="${y + 12}" width="${chip.length * 8 + 16}" height="24"/>` + text(684 - chip.length * 4 - 8, y + 28, chip, { anchor: 'middle', size: 11, cls: 'caps inv' }) : '');
-const states = sheet(720, 600, [
-  text(20, 22, 'ACTIVITY · SHAPE, WORD AND SIGN; INVERSION ONLY WHERE THERE IS SOMETHING TO DO', { size: 11, cls: 'b caps' }),
-  row(36, 'sent', 'Sent', '−250'), row(84, 'received', 'Received', '+1,000'), row(132, 'pending', 'Pending', '−40', 'Speed up'),
-  row(180, 'failed', 'Failed', '−12', 'Retry'),
-  box(20, 228, 680, 48) + text(64, 257, 'REPLACED →', { cls: 'caps b', size: 12 }) + text(500, 257, '−40', { anchor: 'end', size: 14 }) + `<line class="stroke" x1="470" y1="252.5" x2="502" y2="252.5"/>`,
-  text(20, 316, 'WARNINGS · INK WEIGHT, NEVER COLOR', { size: 11, cls: 'b caps' }),
-  box(20, 330, 680, 44) + text(36, 357, tier('Note', 'This site has not connected before.'), { size: 12 }),
-  box(20, 386, 680, 44, 'stroke') + icon('warning', 36, 400) + text(64, 413, tier('Warning', 'The fee is below what this node relays.'), { size: 12 }),
-  `<rect class="ink" x="20" y="442" width="680" height="56"/>` + icon('warning', 36, 462, 16, 'invs') + text(64, 475, tier('Danger', 'This request pays an address you have never paid.'), { size: 12, cls: 'inv' }),
-  button(20, 518, 334, 'Reject', true), button(366, 518, 334, 'Sign anyway', false),
-  text(20, 584, 'On danger the safe choice is the filled button; the risky one is outlined.', { size: 11 }),
+const row = (y, glyph, status, struck) => box(20, y, 680, 64) + (glyph ? icon(glyph, 36, y + 13) : '') +
+  text(64, y + 27, 'Sent', { size: 14 }) + text(668, y + 27, '−40', { anchor: 'end', size: 14 }) +
+  (struck ? `<line class="stroke" x1="644" y1="${y + 22.5}" x2="669" y2="${y + 22.5}"/>` : '') +
+  text(36, y + 49, 'Nexus', { size: 12 }) + text(668, y + 49, status, { anchor: 'end', size: 12 });
+const states = sheet(720, 640, [
+  text(20, 22, 'ACTIVITY · A SHAPE ONLY WHEN CERTAIN, ALWAYS THE WORDS AND THE SIGN', { size: 11, cls: 'b caps' }),
+  row(36, 'sent', 'included in block 5'), row(100, 'pending', 'pending'),
+  row(164, null, 'not included; its nonce was spent by another transaction', true),
+  row(228, null, 'unknown to node'),
+  box(20, 304, 680, 112) + icon('sent', 36, 320, 32) + text(36, 376, 'NO TRANSACTIONS YET', { size: 12, cls: 'b caps' }) +
+    text(36, 396, 'Transactions sent from this wallet appear here.', { size: 12 }),
+  text(20, 448, 'WARNINGS · INK WEIGHT, NEVER COLOR', { size: 11, cls: 'b caps' }),
+  box(20, 462, 680, 44) + text(36, 489, tier('Note', 'This site has not connected before.'), { size: 12 }),
+  box(20, 514, 680, 44, 'stroke') + icon('warning', 36, 528) + text(64, 541, tier('Warning', 'The fee is below what this node relays.'), { size: 12 }),
+  `<rect class="ink" x="20" y="566" width="680" height="56"/>` + icon('warning', 36, 586, 16, 'invs') + text(64, 599, tier('Danger', 'This request pays an address you have never paid.'), { size: 12, cls: 'inv' }),
 ].join(''));
 
 mkdirSync('docs/brand/specimens', { recursive: true });

@@ -91,7 +91,10 @@ label.k { display: block; margin-bottom: var(--s-1); font-size: var(--fs-12); te
 .transaction-summary { flex: 1; min-width: 0; }
 .transaction-line { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-2); }
 .transaction-line + .transaction-line { margin-top: var(--s-1); }
-.transaction-title { font-size: var(--fs-14); }
+.transaction-title { font-size: var(--fs-14); display: inline-flex; align-items: center; gap: var(--s-2); }
+/* A fixed slot, so titles line up whether or not a state has a shape. */
+.transaction-glyph { display: inline-flex; width: 16px; height: 16px; flex: none; }
+.transaction-item.replaced .transaction-amount { text-decoration: line-through; }
 .transaction-amount { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; min-width: 0; text-align: right; }
 .transaction-context { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .transaction-status { text-align: right; max-width: 60%; overflow-wrap: anywhere; }
@@ -101,7 +104,11 @@ label.k { display: block; margin-bottom: var(--s-1); font-size: var(--fs-12); te
 .transaction-details .row-actions { flex-wrap: wrap; align-items: center; }
 .transaction-details .row-actions .icon-action { flex: 0 0 32px; }
 .transaction-payload { margin: 0; padding: var(--s-3); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-12); max-height: 260px; overflow: auto; }
+/* Empty: a 32 px glyph, a title and one line (docs/brand/guidebook.md §7). */
 .transaction-empty { border: var(--rule); padding: var(--s-4) var(--s-3); }
+.transaction-empty .icon { margin-bottom: var(--s-3); }
+.transaction-empty .section-label { margin: 0 0 var(--s-1); }
+.transaction-empty p { margin: 0; }
 .transaction-heading ~ .toast:empty { display: none; }
 .balance-value .unread { font-size: var(--fs-16); line-height: var(--lh-body); }
 .notices:empty { display: none; }

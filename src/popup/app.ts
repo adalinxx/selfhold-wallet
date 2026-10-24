@@ -2290,9 +2290,14 @@ function pendingSubmissionsScreen() {
         catch { message.textContent = "Could not copy. Select the transaction ID above."; }
       },
     }, icon("copy")));
+    // Where it stands, as a shape beside the words (docs/brand/guidebook.md §6):
+    // in a block, the sent arrow; still waiting, the clock; anything less sure, none.
+    const glyph = h("span", { class: "transaction-glyph" });
+    const showGlyph = (kind?: string) => glyph.replaceChildren(...(kind === "included" ? [icon("sent")]
+      : kind === "pending" || kind === "pending or dropped" ? [icon("pending")] : []));
     const row = h("details", { class: "transaction-item" }, h("summary", {},
       h("div", { class: "transaction-summary" },
-        h("div", { class: "transaction-line" }, h("span", { class: "transaction-title" }, replacesCID ? "Fee replacement" : transaction.to.startsWith("buy on ") ? "Purchase payment" : transaction.to.startsWith("sell on ") ? "Sell order" : "Sent"), h("span", { class: "transaction-amount" }, fmt(transaction.amount))),
+        h("div", { class: "transaction-line" }, h("span", { class: "transaction-title" }, glyph, replacesCID ? "Fee replacement" : transaction.to.startsWith("buy on ") ? "Purchase payment" : transaction.to.startsWith("sell on ") ? "Sell order" : "Sent"), h("span", { class: "transaction-amount" }, `−${fmt(transaction.amount)}`)),
         h("div", { class: "transaction-line muted" }, h("span", { class: "transaction-context", title: chain }, chain), state),
       ),
     ), details);
@@ -2331,6 +2336,9 @@ function pendingSubmissionsScreen() {
         const result = (await reconciliationResult).get(transaction.cid) ?? await sentStatus(
           reader(chosen.url, chain.split("/"), platform.fetch, auth), transaction.cid, recorded);
         state.textContent = statusText(result);
+        showGlyph(result.kind);
+        // Replaced: its nonce went to another transaction, so this amount never moved.
+        row.classList.toggle("replaced", result.kind === "replaced");
         if (result.kind === "included" || result.kind === "replaced" || result.kind === "nonce advanced") increaseFee?.remove();
         if (result.kind === "included") {
           try {
@@ -2377,7 +2385,9 @@ function pendingSubmissionsScreen() {
     refreshNotice,
     ...(pendingList.childElementCount ? [h("h2", { class: "section-label" }, `Pending recovery · ${pendingList.childElementCount}`), pendingList] : []),
     ...(recentList.childElementCount ? [h("h2", { class: "section-label" }, "Recent & archived"), recentList] : []),
-    ...(!seen.size ? [h("p", { class: "transaction-empty muted" }, "No transactions yet. Transactions sent from this wallet will appear here.")] : []),
+    ...(!seen.size ? [h("div", { class: "transaction-empty" }, icon("sent", 32),
+      h("h2", { class: "section-label" }, "No transactions yet"),
+      h("p", { class: "muted" }, "Transactions sent from this wallet appear here."))] : []),
     h("button", { class: "btn block", onclick: activityScreen }, "Back")));
 }
 
