@@ -6,23 +6,11 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 const master = readFileSync('public/assets/selfhold-mark.svg', 'utf8');
 const geometry = master.match(/<g id="mark"[^>]*>([\s\S]*?)<\/g>/)[1].trim().replace(/\s*\n\s*/g, '');
 
-// Lucide 1.61.0 (ISC), 24-unit grid. Names are the guidebook's meanings.
-export const ICONS = {
-  copy: { lucide: 'copy', meaning: 'Copy a value', d: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>' },
-  refresh: { lucide: 'refresh-cw', meaning: 'Read again', d: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>' },
-  edit: { lucide: 'pencil', meaning: 'Rename', d: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>' },
-  sent: { lucide: 'arrow-up-right', meaning: 'Sent', d: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>' },
-  received: { lucide: 'arrow-down-left', meaning: 'Received', d: '<path d="M17 7 7 17"/><path d="M17 17H7V7"/>' },
-  pending: { lucide: 'clock', meaning: 'Pending', d: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>' },
-  failed: { lucide: 'x', meaning: 'Failed', d: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>' },
-  confirmed: { lucide: 'check', meaning: 'Confirmed', d: '<path d="M20 6 9 17l-5-5"/>' },
-  warning: { lucide: 'triangle-alert', meaning: 'Warning', d: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>' },
-  locked: { lucide: 'lock', meaning: 'Locked', d: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>' },
-  external: { lucide: 'external-link', meaning: 'Opens outside', d: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>' },
-  show: { lucide: 'eye', meaning: 'Show', d: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>' },
-  hide: { lucide: 'eye-off', meaning: 'Hide', d: '<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>' },
-  node: { lucide: 'server', meaning: 'Node', d: '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>' },
-};
+// The interface's own icon vocabulary, so the sheets draw what the wallet draws.
+const { ICONS: VOCABULARY, strokeFor } = await import('../src/popup/icons.ts');
+const ICONS = Object.fromEntries(Object.entries(VOCABULARY).map(([name, { lucide, meaning, shapes }]) => [name, {
+  lucide, meaning, d: shapes.map(([tag, attributes]) => `<${tag} ${Object.entries(attributes).map(([k, v]) => `${k}="${v}"`).join(' ')}/>`).join(''),
+}]));
 
 // The tokens (public/assets/tokens.css), light then dark, and the system sans.
 const STYLE = `<style>
@@ -38,7 +26,7 @@ const text = (x, y, s, { size = 12, anchor = 'start', cls = '' } = {}) => `<text
 /** The mark, `size` px square, top-left at x, y. */
 const mark = (x, y, size, cls = 'ink') => `<g class="${cls}" transform="translate(${x} ${y}) scale(${size / 320})">${geometry}</g>`;
 /** An icon at `size` px, stroked at exactly 1px: 24 / size on the 24 grid. */
-const icon = (name, x, y, size = 16, cls = 'stroke') => `<g class="${cls}" transform="translate(${x} ${y}) scale(${size / 24})" stroke-width="${24 / size}" stroke-linecap="round" stroke-linejoin="round">${ICONS[name].d}</g>`;
+const icon = (name, x, y, size = 16, cls = 'stroke') => `<g class="${cls}" transform="translate(${x} ${y}) scale(${size / 24})" stroke-width="${strokeFor(size)}" stroke-linecap="round" stroke-linejoin="round">${ICONS[name].d}</g>`;
 const box = (x, y, w, h, cls = 'rule') => `<rect class="${cls}" x="${x + 0.5}" y="${y + 0.5}" width="${w - 1}" height="${h - 1}"/>`;
 const button = (x, y, w, label, filled) => (filled ? `<rect class="ink" x="${x}" y="${y}" width="${w}" height="36"/>` : box(x, y, w, 36)) +
   text(x + w / 2, y + 22, label, { anchor: 'middle', cls: `caps${filled ? ' inv' : ''}` });
