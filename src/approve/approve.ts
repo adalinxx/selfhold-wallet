@@ -136,7 +136,13 @@ async function readNonce(chainPath: string[], address: string, keys: readonly st
         recordsUnread = `${new URL(url).host} did not serve this chain's records (${String((e as Error)?.message ?? e)}).`;
         return undefined;
       }
-      return { nonce: nextNonce(state.nonce, chain, address, knownPending(settings, live)), stateNonce: state.nonce, balance: state.balance, node: url, stale, present,
+      const nonce = nextNonce(state.nonce, chain, address, knownPending(settings, live));
+      // Nodes pool only a transaction that executes now, one per account: a
+      // write signed past a pending one would be refused (`nonceAhead`).
+      if (nonce > state.nonce) {
+        return { error: `This account has a transaction still pending on ${chain}. Approve this once it confirms (about one block).` };
+      }
+      return { nonce, stateNonce: state.nonce, balance: state.balance, node: url, stale, present,
         ...(market && { market }) };
     } catch { return undefined; /* not this node */ }
   };

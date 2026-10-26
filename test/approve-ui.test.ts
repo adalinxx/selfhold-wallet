@@ -371,3 +371,14 @@ test("an explicit zero page fee is not replaced by the saved default", async () 
   approveButton(dom).click(); await settle();
   assert.equal(sent.find((m) => m.type === "decide")?.fee, "0");
 });
+
+test("a write while one is still pending on the chain waits for it, and cannot be signed", async () => {
+  const settings = {
+    endpoints: { "Nexus/fanfare/band": { url: NODE, acceptsSubmit: true, source: "user" } }, nodeMode: "custom",
+    pendingSubmissions: [{ cid: "c", chain: "Nexus/fanfare/band", from: me, to: holder, amount: "1", fee: "1", nonce: "7", at: 0 }],
+  };
+  const { sent, dom, text } = await open(buy, "1000", undefined, { settings });
+  assert.ok(text().includes("still pending on Nexus/fanfare/band"), text());
+  assert.ok(approveButton(dom)?.disabled ?? true, "nothing to sign at a nonce no node pools");
+  assert.ok(!sent.some((m) => m.type === "decide" && m.approve), "nothing was approved");
+});
