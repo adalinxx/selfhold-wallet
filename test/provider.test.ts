@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { messageBytes, parseProviderCall, parseRecordsWrite, pageOrigin, totalDebit } from "../src/lib/wallet/provider.ts";
 import { deriveAccount } from "../src/lib/crypto/accounts.ts";
-import { SIGNATURE_DOMAIN } from "@adalinxx/lattice-core";
+import { SIGNATURE_DOMAIN } from "@adalin/lattice-core";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { createSigner, type VaultStorage } from "../src/lib/wallet/signer.ts";

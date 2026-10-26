@@ -1,7 +1,7 @@
 // Shared types for the popup <-> background-signer protocol. Note: AccountView
 // and every message intentionally carry NO private key material.
 
-import type { TransactionPayload } from "@adalinxx/lattice-core";
+import type { TransactionPayload } from "@adalin/lattice-core";
 
 /** Persisted, encrypted-at-rest wallet contents (the vault plaintext). */
 export interface WalletData {

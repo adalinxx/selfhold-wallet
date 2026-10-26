@@ -5,13 +5,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { SubmissionError } from "@adalinxx/lattice-relay";
-import { NodeError } from "@adalinxx/lattice-client";
+import { SubmissionError } from "@adalin/lattice-relay";
+import { NodeError } from "@adalin/lattice-client";
 import { normalizeNodeURL, parseChainPath, originPattern, isLoopbackNodeURL } from "../src/lib/config.ts";
 import { loadSettings, recordOpenDeposit, completeOpenDeposit, recordOpenPurchase, archiveOpenPurchase, recordSent, forgetSent, recordPendingSubmission, completePendingSubmission, archivePendingSubmission, recordWithdrawalAttempt, forgetWithdrawalAttempt, defaultFee, parseFee, DEFAULT_SETTINGS, FALLBACK_FEE, type Settings } from "../src/lib/wallet/settings.ts";
 import type { SignedSubmit } from "../src/lib/wallet/types.ts";
 import { reader, submitter, submitChecked, CIDMismatchError, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, declaredHosts, chainNodes, spread, describe, feeWarning, highFeeWarning, nextReplacementFee, usualBlockWait, sentStatus, statusText, OPERATOR_DECLARED, verifySparseProof } from "../src/lib/wallet/node.ts";
-import type { VolumeEntry } from "@adalinxx/lattice-volumes";
+import type { VolumeEntry } from "@adalin/lattice-volumes";
 import { importPrivateKey } from "../src/lib/crypto/accounts.ts";
 import { signTransfer } from "../src/lib/wallet/session.ts";
 

@@ -1,4 +1,4 @@
-import { buildTransfer, encodeTransactionBody, signedTransactionCID, transactionPayload } from "@adalinxx/lattice-core";
+import { buildTransfer, encodeTransactionBody, signedTransactionCID, transactionPayload } from "@adalin/lattice-core";
 import type { PendingSubmission } from "./settings.ts";
 import { isAccountAddress } from "./session.ts";
 

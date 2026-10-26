@@ -4,8 +4,8 @@
 // Lattice design system. The host supplies a Platform: signer, settings
 // store, network permission, and optionally its own node.
 
-import type { Fetch } from "@adalinxx/lattice-client";
-import { nodeCookieAuthorization } from "@adalinxx/lattice-core";
+import type { Fetch } from "@adalin/lattice-client";
+import { nodeCookieAuthorization } from "@adalin/lattice-core";
 import type { WalletClient } from "../lib/wallet/client.ts";
 import { newMnemonic, isValidMnemonic, keyFilePrivateKey } from "../lib/crypto/accounts.ts";
 import { reader, submitter, submitChecked, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, declaredHosts, spread, describe, feeWarning, highFeeWarning, nextReplacementFee, usualBlockWait, sentStatus, statusText, activeDeposits, depositValues, receiptWithdrawer, type ActiveDeposit, OPERATOR_DECLARED } from "../lib/wallet/node.ts";

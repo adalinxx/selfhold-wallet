@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import type { WalletClient } from "../src/lib/wallet/client.ts";
 import { DEFAULT_SETTINGS, type Settings } from "../src/lib/wallet/settings.ts";
-import { cidV1DagCbor, encodeDagCbor, type DagCborValue } from "@adalinxx/lattice-core";
+import { cidV1DagCbor, encodeDagCbor, type DagCborValue } from "@adalin/lattice-core";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ensureOrigins } from "../src/popup/app.ts";
 import { activeDeposits, receiptWithdrawer, depositValues } from "../src/lib/wallet/node.ts";

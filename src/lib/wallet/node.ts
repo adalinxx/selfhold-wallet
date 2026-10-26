@@ -11,10 +11,10 @@ import {
   getJSON,
   type Fetch,
   type ResolvedEndpoint,
-} from "@adalinxx/lattice-client";
-import { HTTPTransactionSubmitter, SubmissionError, type SubmissionRefusal, type TransactionSubmitter } from "@adalinxx/lattice-relay";
-import { assertCID, decodeCanonicalBlock, decodeCanonicalLatticeState, decodeDagCbor, type DagCborValue } from "@adalinxx/lattice-core";
-import { HTTPVolumeTransport, VolumeClient, verifyVolume, type VerifiedVolume, type VolumeEntry } from "@adalinxx/lattice-volumes";
+} from "@adalin/lattice-client";
+import { HTTPTransactionSubmitter, SubmissionError, type SubmissionRefusal, type TransactionSubmitter } from "@adalin/lattice-relay";
+import { assertCID, decodeCanonicalBlock, decodeCanonicalLatticeState, decodeDagCbor, type DagCborValue } from "@adalin/lattice-core";
+import { HTTPVolumeTransport, VolumeClient, verifyVolume, type VerifiedVolume, type VolumeEntry } from "@adalin/lattice-volumes";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ROOT_CHAIN } from "../config.ts";
 import type { SignedSubmit } from "./types.ts";

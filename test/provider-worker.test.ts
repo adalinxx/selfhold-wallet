@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { signedTransactionCID, type TransactionBody } from "@adalinxx/lattice-core";
+import { signedTransactionCID, type TransactionBody } from "@adalin/lattice-core";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { deriveAccount } from "../src/lib/crypto/accounts.ts";

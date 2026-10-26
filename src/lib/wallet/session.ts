@@ -4,7 +4,7 @@
 
 import { deriveAccountFromSeed, importPrivateKey, type Account } from "../crypto/accounts.ts";
 import { mnemonicToSeedSync } from "@scure/bip39";
-import { buildTransfer, parseCID, signTransactionBody, signedTransactionCID, transactionPayload, type TransactionBody } from "@adalinxx/lattice-core";
+import { buildTransfer, parseCID, signTransactionBody, signedTransactionCID, transactionPayload, type TransactionBody } from "@adalin/lattice-core";
 import type { WalletData, AccountView, SignedSubmit } from "./types.ts";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { bytesToHex } from "@noble/hashes/utils.js";

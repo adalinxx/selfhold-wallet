@@ -263,7 +263,7 @@ until a signed update**, and isolates the signer from any web page.
 
 The wallet **builds, encodes and signs the transaction locally** with the
 [Lattice SDK](https://github.com/adalinxx/lattice-sdk)
-(`@adalinxx/lattice-core`): canonical DAG-CBOR, the `bodyCID`, the
+(`@adalin/lattice-core`): canonical DAG-CBOR, the `bodyCID`, the
 `lattice-tx-v1` signing envelope, Ed25519 — it never trusts the node for *what
 it signs*. Signing runs only in the background worker. The SDK path is checked
 **bit-for-bit** against Lattice's published conformance vectors
@@ -275,7 +275,7 @@ CIDs, the envelope, and RFC 8032 signatures, with the negative cases rejected.
 
 The SDK is not published to npm. It is a **git submodule pinned to an exact
 commit** (`vendor/lattice-sdk`), and its packages are `file:` dependencies
-(`@adalinxx/lattice-core`, `-client`, `-relay`, `-volumes`). `npm ci` runs the
+(`@adalin/lattice-core`, `-client`, `-relay`, `-volumes`). `npm ci` runs the
 `prepare` script, which installs the SDK from its own lockfile and builds it
 (`npm run sdk` does the same by hand, e.g. after `npm ci --ignore-scripts`).
 esbuild then inlines it into the extension bundle: no remote code.

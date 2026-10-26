@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addressFromMultikey, decodeEd25519Multikey, encodeTransactionBody, transactionSigningPreimage, verifyPreimage,
-} from "@adalinxx/lattice-core";
+} from "@adalin/lattice-core";
 import { importPrivateKey } from "../src/lib/crypto/accounts.ts";
 import { signTransfer } from "../src/lib/wallet/session.ts";
 

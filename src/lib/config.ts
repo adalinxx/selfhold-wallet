@@ -1,7 +1,7 @@
 // Chain paths and node URLs. Hosted defaults are replaceable; custom operators
 // require an explicit permission grant.
 
-import { normalizeNodeURL as sdkNormalizeNodeURL } from "@adalinxx/lattice-client";
+import { normalizeNodeURL as sdkNormalizeNodeURL } from "@adalin/lattice-client";
 
 export const ROOT_CHAIN = "Nexus";
 /** Optional public Nexus endpoint. It is never selected until the user chooses
