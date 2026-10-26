@@ -1,6 +1,6 @@
 // Synthetic, content-addressed node data for read-only review tests. No signing.
-import { cidV1DagCbor, encodeDagCbor, type DagCborValue } from "@adalinxx/lattice-core";
-import { encodeVolumeArchive, VOLUME_ARCHIVE_MEDIA_TYPE } from "@adalinxx/lattice-volumes";
+import { cidV1DagCbor, encodeDagCbor, type DagCborValue } from "@adalin/lattice-core";
+import { encodeVolumeArchive, VOLUME_ARCHIVE_MEDIA_TYPE } from "@adalin/lattice-volumes";
 
 export function recordState(present: boolean) {
   const entries: Array<{ cid: string; bytes: Uint8Array }> = [];

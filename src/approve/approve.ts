@@ -12,9 +12,11 @@ import { totalDebit, type ProviderCall, type WriteRequest } from "../lib/wallet/
 import { absentKeys, fillWriteRequest, type WriteIntent } from "../lib/wallet/write-request.ts";
 import { addressGroups, addressNames, nameAddresses, otherHosts, payeeRecords, paymentsToShow, shortAddress } from "../lib/wallet/review.ts";
 import type { WalletState } from "../lib/wallet/types.ts";
-import { defaultFee, loadSettings } from "../lib/wallet/settings.ts";
+import { chosenFee, defaultFee, loadSettings } from "../lib/wallet/settings.ts";
 import { chosenNodes, discoveryStarts, knownPending, livePageWrites, nextNonce, type PageWrite } from "../lib/wallet/nonce.ts";
-import { browserFetch, chainNodes, reader, recordsPresent, sentStatus } from "../lib/wallet/node.ts";
+import { automaticFee, browserFetch, chainNodes, readFeeMarket, reader, recordsPresent, sentStatus, type FeeMarket } from "../lib/wallet/node.ts";
+import { recordsBody } from "../lib/wallet/session.ts";
+import { signedTransactionSize } from "@adalin/lattice-core";
 import { ALL_HTTPS_ORIGINS, originPattern } from "../lib/config.ts";
 import { icon } from "../popup/icons.ts";
 
@@ -90,8 +92,9 @@ function fail(message: string) {
 /**
  * `stale`: page writes the node's pool no longer holds (never admitted, or dropped).
  * `present`: those of the keys asked about that already hold a value there.
+ * `market`: that node's fee market, when it answered (`readFeeMarket`).
  */
-type NonceRead = { nonce: bigint; stateNonce: bigint; balance: bigint; node: string; stale: string[]; present: string[] } | { missing: string[]; automatic: boolean } | { error: string };
+type NonceRead = { nonce: bigint; stateNonce: bigint; balance: bigint; node: string; stale: string[]; present: string[]; market?: FeeMarket } | { missing: string[]; automatic: boolean } | { error: string };
 const permitted = (origin: string) => chrome.permissions.contains({ origins: [origin] });
 
 /** The next free nonce for `address` on `chainPath`, and which of `keys` exist, from a node the person chose or allowed. */
@@ -125,7 +128,7 @@ async function readNonce(chainPath: string[], address: string, keys: readonly st
         const status = await sentStatus(at, write.cid!, { from: address, nonce: BigInt(write.nonce) }).catch(() => null);
         if (status?.kind === "unknown to node") dead.add(write.cid!);
       }));
-      const state = await node.account(address);
+      const [state, market] = await Promise.all([node.account(address), readFeeMarket(node).catch(() => undefined)]);
       const live = livePageWrites(pageWrites, chain, state.nonce, dead);
       const stale = [...dead];
       let present: string[];
@@ -133,7 +136,8 @@ async function readNonce(chainPath: string[], address: string, keys: readonly st
         recordsUnread = `${new URL(url).host} did not serve this chain's records (${String((e as Error)?.message ?? e)}).`;
         return undefined;
       }
-      return { nonce: nextNonce(state.nonce, chain, address, knownPending(settings, live)), stateNonce: state.nonce, balance: state.balance, node: url, stale, present };
+      return { nonce: nextNonce(state.nonce, chain, address, knownPending(settings, live)), stateNonce: state.nonce, balance: state.balance, node: url, stale, present,
+        ...(market && { market }) };
     } catch { return undefined; /* not this node */ }
   };
   const tried = new Set<string>();
@@ -335,12 +339,18 @@ async function render() {
     return;
   }
   if (call.method !== "writeRecords") return fail("Unknown request");
-  // A page that asks no fee pays the person's default for the chain: shown
-  // here, and signed as shown.
+  // A page that asks no fee pays the person's fixed fee for the chain, else
+  // the automatic fee of the node the account is read from: shown here, and
+  // signed as shown.
   const mine = ++drawn;
-  const fee = call.params.fee ?? defaultFee(await loadSettings(chrome.storage.local), call.params.chainPath.join("/"));
+  const settings = await loadSettings(chrome.storage.local);
+  const chain = call.params.chainPath.join("/");
+  const automatic = call.params.fee === undefined && chosenFee(settings, chain) === undefined;
+  const fee = call.params.fee ?? defaultFee(settings, chain);
   if (mine !== drawn) return;
-  reviewWrite(mine, { ...call.params, fee }, address, origin, state);
+  const params = call.params;
+  reviewWrite(mine, { ...params, fee }, address, origin, state, undefined,
+    automatic ? (priced) => reviewWrite(++drawn, { ...params, fee: priced }, address, origin, state) : undefined);
 }
 
 const sameKeys = (a: readonly string[], b: readonly string[]) => [...a].sort().join("\n") === [...b].sort().join("\n");
@@ -350,7 +360,7 @@ const sameKeys = (a: readonly string[], b: readonly string[]) => [...a].sort().j
  * site's connected account first, else the active one. `present`: the keys
  * of records written only if absent that the last read found there.
  */
-async function reviewRequest(intent: WriteIntent, origin: string | null, state: WalletState, connected: string | null, chosen?: string, present: string[] = []) {
+async function reviewRequest(intent: WriteIntent, origin: string | null, state: WalletState, connected: string | null, chosen?: string, present: string[] = [], priced?: string) {
   const mine = ++drawn;
   const address = chosen ?? (state.accounts.some((a) => a.address === connected) ? connected! : state.active ?? state.accounts[0]!.address);
   chosenAccount = address;
@@ -361,7 +371,7 @@ async function reviewRequest(intent: WriteIntent, origin: string | null, state: 
   const choose = [el("label", { className: "k", textContent: "Account" }), picker];
   let write: WriteRequest;
   try {
-    write = fillWriteRequest(intent, address, new Set(present), intent.fee ?? defaultFee(settings, intent.chainPath.join("/")));
+    write = fillWriteRequest(intent, address, new Set(present), intent.fee ?? priced ?? defaultFee(settings, intent.chainPath.join("/")));
   } catch (e) {
     view.replaceChildren(el("h1", { textContent: "Review request" }), el("p", { className: "from" }, "from ", site(origin)), ...choose,
       el("p", { className: "warn", textContent: String((e as Error)?.message ?? e) }), decision("Sign", () => {}, () => false));
@@ -369,15 +379,22 @@ async function reviewRequest(intent: WriteIntent, origin: string | null, state: 
   }
   reviewWrite(mine, write, address, origin, state, {
     keys: absentKeys(intent, address), present, label: intent.label, choose,
-    reread: (now) => { reviewRequest(intent, origin, state, connected, address, now).catch((e) => fail(String(e?.message ?? e))); },
-  });
+    reread: (now) => { reviewRequest(intent, origin, state, connected, address, now, priced).catch((e) => fail(String(e?.message ?? e))); },
+  }, intent.fee === undefined && priced === undefined && chosenFee(settings, intent.chainPath.join("/")) === undefined
+    ? (fee) => { reviewRequest(intent, origin, state, connected, address, present, fee).catch((e) => fail(String(e?.message ?? e))); }
+    : undefined);
 }
 
 /** What an opened request adds to a write's review: the account picker, its label, and what was left out. */
 interface Opened { keys: string[]; present: string[]; label?: string; choose: HTMLElement[]; reread: (present: string[]) => void }
 
-/** A write's review, signed as `address`; `mine`: its place in `drawn`. */
-function reviewWrite(mine: number, write: WriteRequest, address: string, origin: string | null, state: WalletState, opened?: Opened) {
+/**
+ * A write's review, signed as `address`; `mine`: its place in `drawn`.
+ * `reprice`: for an automatic fee, drawn again at the fee the account's node
+ * names once it is read, so what is signed is what was shown.
+ */
+function reviewWrite(mine: number, write: WriteRequest, address: string, origin: string | null, state: WalletState, opened?: Opened,
+  reprice?: (fee: string) => void) {
   const current = () => mine === drawn;
   const account = state.accounts.find((a) => a.address === address);
   const who = account?.label ?? shortAddress(address);
@@ -395,7 +412,8 @@ function reviewWrite(mine: number, write: WriteRequest, address: string, origin:
   const balanceAfter = el("p", { className: "meta", textContent: "Balance: checking…" });
   const nonceShown = el("span", { textContent: "checking…" });
   let nonceRead: NonceRead = { missing: [], automatic: false };
-  const covered = (read: NonceRead) => "nonce" in read && read.balance >= debit;
+  // An automatic fee is known only once the node's fee is read: until then there is nothing to sign.
+  const covered = (read: NonceRead) => "nonce" in read && read.balance >= debit && !(reprice && !read.market);
   // A record written only if absent that appeared, or went, since the records were shown: show them again.
   const changed = (read: NonceRead) => opened !== undefined && "present" in read && !sameKeys(read.present, opened.present);
   let signing = false;
@@ -411,6 +429,7 @@ function reviewWrite(mine: number, write: WriteRequest, address: string, origin:
     const now = await readNonce(chainPath, address, opened?.keys);
     if (!current()) return;
     if (changed(now)) return opened!.reread((now as Extract<NonceRead, { nonce: bigint }>).present);
+    if (repriced(now)) return;
     if (!covered(now)) { nonceRead = now; release(); showRead(); return; }
     await decide(true, opened ? address : undefined, now as Extract<NonceRead, { nonce: bigint }>, opened ? { present: opened.present, fee } : { fee });
   };
@@ -430,7 +449,10 @@ function reviewWrite(mine: number, write: WriteRequest, address: string, origin:
   bar.status.textContent = `Checking your account on ${chain}…`;
   function showRead() {
     bar.approve.textContent = approveLabel;
-    if ("nonce" in nonceRead) {
+    if ("nonce" in nonceRead && reprice && !nonceRead.market) {
+      nonceShown.textContent = `${nonceRead.nonce} · account read from ${new URL(nonceRead.node).host}`;
+      bar.status.textContent = `Could not read the network fee from ${new URL(nonceRead.node).host}. Try again, or set a fixed fee for ${chain} in the wallet.`;
+    } else if ("nonce" in nonceRead) {
       const { balance } = nonceRead;
       nonceShown.textContent = `${nonceRead.nonce} · account read from ${new URL(nonceRead.node).host}`;
       if (balance >= debit) {
@@ -458,9 +480,23 @@ function reviewWrite(mine: number, write: WriteRequest, address: string, origin:
     }
     bar.arm();
   }
+  /**
+   * Whether the node's automatic fee, priced for this write's exact size,
+   * differs from the one shown: then the review is drawn again at it.
+   */
+  const repriced = (read: NonceRead) => {
+    if (!reprice || !("nonce" in read) || !read.market) return false;
+    const priced = automaticFee(read.market, (f) => signedTransactionSize(recordsBody(address, {
+      actions, payments: payments.map((p) => ({ to: p.to, amount: BigInt(p.amount) })), fee: f, nonce: read.nonce, chainPath: [...chainPath],
+    }))).toString();
+    if (priced === fee) return false;
+    reprice(priced);
+    return true;
+  };
   const check = () => readNonce(chainPath, address, opened?.keys).then((r) => {
     if (!current()) return;
     if (changed(r)) return opened!.reread((r as Extract<NonceRead, { nonce: bigint }>).present);
+    if (repriced(r)) return;
     nonceRead = r; showRead();
   }, (e) => { nonceRead = { error: String(e?.message ?? e) }; showRead(); });
 

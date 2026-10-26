@@ -1,5 +1,5 @@
 // Conformance gate, now exercising the SDK the wallet signs with
-// (@adalinxx/lattice-core): reproduce Lattice's published conformance vectors
+// (@adalin/lattice-core): reproduce Lattice's published conformance vectors
 // (Lattice/Vectors, copied from the pinned Lattice 44.0.0 that lattice-node
 // builds against) bit for bit: addresses, TransactionBody DAG-CBOR bytes and
 // CIDs, the lattice-tx-v1 signing envelope, and RFC 8032 signatures. Negative
@@ -16,7 +16,7 @@ import {
   encodeEd25519Multikey as encodeMultikeyEd25519, decodeEd25519Multikey as decodeMultikeyEd25519,
   addressFromMultikey, encodeDagCbor, cidV1DagCbor, buildTransfer, encodeTransactionBody,
   transactionSigningPreimage as buildPreimage, type DagCborValue,
-} from "@adalinxx/lattice-core";
+} from "@adalin/lattice-core";
 
 const encode = (value: unknown) => encodeDagCbor(value as DagCborValue);
 

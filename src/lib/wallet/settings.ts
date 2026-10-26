@@ -116,11 +116,18 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = { chain: ROOT_CHAIN, chains: [ROOT_CHAIN], nodeMode: "automatic", endpoints: {}, sent: {}, pendingSubmissions: [], confirmedSubmissions: [], openDeposits: [], openPurchases: [], confirmedPurchases: [], fees: {} };
 
-/** With no per-chain choice, a send starts at 1 unit: the smallest positive fee, not an estimate. */
-export const FALLBACK_FEE = "1";
+/** The fee the person chose for this chain's sends; undefined means automatic. */
+export function chosenFee(settings: Settings, chain: string): string | undefined {
+  return settings.fees[chain];
+}
 
-export function defaultFee(settings: Settings, chain: string): string {
-  return settings.fees[chain] ?? FALLBACK_FEE;
+/**
+ * The fee a transaction on this chain starts at: the person's choice, else
+ * `automatic` (the node's floor, or what the next block needs when blocks are
+ * full: `automaticFee`), else 0 before the node has been read.
+ */
+export function defaultFee(settings: Settings, chain: string, automatic?: bigint): string {
+  return settings.fees[chain] ?? (automatic ?? 0n).toString();
 }
 
 /** A fee as the user typed it: a whole number of units, 0 or more. */

@@ -8,13 +8,15 @@ import {
   NodeClient,
   NodeError,
   OPERATOR_DECLARED,
+  feeToOutbid,
   getJSON,
   type Fetch,
+  type ProjectedBlock,
   type ResolvedEndpoint,
-} from "@adalinxx/lattice-client";
-import { HTTPTransactionSubmitter, SubmissionError, type SubmissionRefusal, type TransactionSubmitter } from "@adalinxx/lattice-relay";
-import { assertCID, decodeCanonicalBlock, decodeCanonicalLatticeState, decodeDagCbor, type DagCborValue } from "@adalinxx/lattice-core";
-import { HTTPVolumeTransport, VolumeClient, verifyVolume, type VerifiedVolume, type VolumeEntry } from "@adalinxx/lattice-volumes";
+} from "@adalin/lattice-client";
+import { HTTPTransactionSubmitter, SubmissionError, type SubmissionRefusal, type TransactionSubmitter } from "@adalin/lattice-relay";
+import { assertCID, buildTransfer, signedTransactionSize, decodeCanonicalBlock, decodeCanonicalLatticeState, decodeDagCbor, type DagCborValue } from "@adalin/lattice-core";
+import { HTTPVolumeTransport, VolumeClient, verifyVolume, type VerifiedVolume, type VolumeEntry } from "@adalin/lattice-volumes";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ROOT_CHAIN } from "../config.ts";
 import type { SignedSubmit } from "./types.ts";
@@ -461,6 +463,123 @@ function isWireMismatch(e: unknown): e is TypeError {
 export function feeWarning(fee: bigint, minRelayFee: bigint | undefined): string | undefined {
   if (minRelayFee === undefined || fee >= minRelayFee) return undefined;
   return `This node relays only fees of at least ${minRelayFee}; it will likely refuse a fee of ${fee}.`;
+}
+
+/** A fee that is at least half of what is sent: likely a slip, worth a second look. */
+export function highFeeWarning(fee: bigint, amount: bigint): string | undefined {
+  if (fee <= 0n || fee * 2n < amount) return undefined;
+  return `The fee is ${fee > amount ? "more than" : fee === amount ? "as much as" : "at least half of"} the amount you send. Check it before signing.`;
+}
+
+/**
+ * Where a same-nonce replacement's fee starts: a quarter more than the
+ * attempt it replaces (at least 1 more, as the pool requires strictly more),
+ * and never under the node's floor. Miners rank by fee per byte, and a
+ * replacement is the same size, so +1 on a large fee rarely moves it up.
+ */
+export function nextReplacementFee(previous: bigint, minRelayFee?: bigint): bigint {
+  const raised = previous + (previous / 4n > 1n ? previous / 4n : 1n);
+  return minRelayFee !== undefined && minRelayFee > raised ? minRelayFee : raised;
+}
+
+/**
+ * What one node says about fees on one chain: its relay floor, the blocks its
+ * pool would fill next (absent from nodes older than `GET /api/fees`), and
+ * the chain's target block time (milliseconds).
+ */
+export interface FeeMarket {
+  minRelayFee: bigint;
+  blocks?: readonly ProjectedBlock[];
+  blockTime?: bigint;
+}
+
+/**
+ * Reads a node's fee market. Chain info is required (it carries the floor
+ * every node reports); the projection and the spec are extras an older or
+ * partial node may lack.
+ */
+export async function readFeeMarket(node: NodeClient, signal?: AbortSignal): Promise<FeeMarket> {
+  const [info, fees, spec] = await Promise.all([
+    node.chainInfo(signal),
+    node.fees(signal).catch(() => undefined),
+    node.chainSpec(signal).catch(() => undefined),
+  ]);
+  return {
+    minRelayFee: fees?.minRelayFee ?? info.minRelayFee ?? 0n,
+    ...(fees && { blocks: fees.blocks }),
+    ...(spec && { blockTime: spec.targetBlockTime }),
+  };
+}
+
+/** A transaction of unknown shape, priced as if this large: a two-party transfer is about 600 bytes. */
+export const ESTIMATED_TRANSACTION_SIZE = 1_024;
+
+/**
+ * The bytes a transfer will take, for pricing. With no recipient or amount
+ * yet, a placeholder of the same shape: addresses have one length, and a
+ * larger amount only adds a byte or two.
+ */
+export function transferSize(args: { from: string; to?: string; amount?: bigint; fee: bigint; nonce?: bigint; chainPath: readonly string[] }): number {
+  const to = args.to && args.to !== args.from ? args.to : args.from.slice(0, -1) + (args.from.endsWith("a") ? "b" : "a");
+  return signedTransactionSize(buildTransfer({
+    from: args.from, to, amount: args.amount && args.amount > 0n ? args.amount : 1_000_000_000n,
+    fee: args.fee, nonce: args.nonce ?? 1_000_000n, chainPath: args.chainPath,
+  }));
+}
+
+/**
+ * The fees a transaction of `size` bytes needs, from a node's market:
+ * `nextBlock` to be in the next block, `soon` within three, `minimum` the
+ * floor. `busy` when the next block has no room for a fee at the floor;
+ * `known` when the node projected its pool at all (older nodes do not, and
+ * then the floor is all there is to go on).
+ */
+export interface FeeChoice { minimum: bigint; nextBlock: bigint; soon: bigint; busy: boolean; known: boolean; waiting: number }
+
+export function feeChoice(market: FeeMarket, size: number): FeeChoice {
+  const floor = market.minRelayFee;
+  const blocks = market.blocks ?? [];
+  // To be in block k, outbid block k's lowest rate if ready transactions are
+  // left after it; if it has room, the floor is enough.
+  const within = (k: number) => {
+    const block = blocks[k];
+    if (!block?.full) return floor;
+    const outbid = feeToOutbid(block, size);
+    return outbid > floor ? outbid : floor;
+  };
+  return {
+    minimum: floor, nextBlock: within(0), soon: within(2),
+    busy: blocks[0]?.full === true, known: market.blocks !== undefined,
+    waiting: blocks.reduce((sum, block) => sum + block.transactionCount, 0),
+  };
+}
+
+/**
+ * The fee the wallet uses when the person has not chosen one: the next
+ * block's. On a chain with room, that is the node's floor.
+ * `size` is that of the transaction paying a given fee: a larger fee can take
+ * a byte more, which needs a little more fee, so it is priced until the fee
+ * pays for its own size. The fee only rises, and only by a few bytes' worth.
+ */
+export function automaticFee(market: FeeMarket, size: (fee: bigint) => number = () => ESTIMATED_TRANSACTION_SIZE): bigint {
+  let fee = market.minRelayFee;
+  for (let pass = 0; pass < 8; pass += 1) {
+    const needed = feeChoice(market, size(fee)).nextBlock;
+    if (needed <= fee) return fee;
+    fee = needed;
+  }
+  return fee;
+}
+
+/** A target block time as people say it: "about every hour", "about every 10 minutes". */
+export function blockCadence(milliseconds: bigint | undefined): string | undefined {
+  if (milliseconds === undefined || milliseconds <= 0n) return undefined;
+  const minutes = Number(milliseconds) / 60_000;
+  if (minutes < 1) return `about every ${Math.max(1, Math.round(minutes * 60))} seconds`;
+  const m = Math.round(minutes);
+  if (m < 60 || (m % 60 !== 0 && m < 180)) return m === 1 ? "about every minute" : `about every ${m} minutes`;
+  const hours = Math.round(m / 60);
+  return hours === 1 ? "about every hour" : `about every ${hours} hours`;
 }
 
 export type SentStatus =

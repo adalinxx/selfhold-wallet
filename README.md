@@ -73,16 +73,38 @@ Reads go through the SDK's `NodeClient` (`/api/state/account`,
 
 ### Fees
 
-The fee is yours: there is no fee field and no estimate service. It is the
-debit-over-credit excess the miner collects (the SDK's `buildTransfer`).
+The fee is the debit-over-credit excess the miner collects (the SDK's
+`buildTransfer`). The wallet prices it from the node it sends through; there
+is no outside estimate service.
 
-- Every send has an editable fee field, prefilled with the chain's default.
-- Each chain's default fee is set under **Fee** (1 unit until you change it).
-- The chosen endpoint reports its own relay floor (`minRelayFee` in
-  `/api/chain/info`, its operator's policy, never consensus). A fee below it
-  is **warned about, not raised**: the send goes as you set it, and the node
-  may refuse it (`belowMinRelayFee`).
-- The review screen shows the fee, the total, and the node's minimum.
+- **Automatic** (each chain's default): the node's relay floor (`minRelayFee`
+  in `/api/chain/info`, its operator's policy, never consensus) while the next
+  block has room. When the node's pool projects full blocks (`GET /api/fees`),
+  the fee that ranks this transaction into the next one: a rate above that
+  block's lowest, for the transaction's exact size (the SDK's
+  `signedTransactionSize` and `feeToOutbid`). A node without `/api/fees`
+  prices at its floor.
+- **Fixed**: under **Settings → Network fee**, one fee for every transaction
+  on the chain, whatever blocks hold.
+- The send screen states the fee in one line: what it buys (the next block
+  has room; or, when blocks are full, the next block, within three, or many
+  blocks), and the chain's target block time from `/api/chain/spec`. While
+  blocks are full it offers **Next block**, **In 3 blocks** and **Minimum**.
+  Any fee can be typed under **Custom fee**, which also shows the node's floor.
+- A fee below the floor is **warned about, not raised**: the transaction goes
+  as set, and the node may refuse it (`belowMinRelayFee`). A fee you typed or
+  picked is never changed by the wallet.
+- The review screen shows the fee, the total and the node's minimum. It warns
+  when the fee is at least half the amount, and when blocks are full and the
+  fee is below what the next block needs.
+- Website requests that name no fee pay the chain's fixed fee, else the
+  automatic fee of the node the account is read from, drawn again once that
+  node answers, so what is signed is what was shown.
+- **Increase fee** on a pending send starts at the most of: a quarter above
+  the previous fee (at least 1 more), the node's floor, and what the next
+  block needs. Miners rank by fee per byte and a replacement is the same size,
+  so 1 more on a large fee rarely moves it up. When the next block has room,
+  the screen says a higher fee is not needed.
 
 ### Status
 
@@ -258,7 +280,7 @@ until a signed update**, and isolates the signer from any web page.
 
 The wallet **builds, encodes and signs the transaction locally** with the
 [Lattice SDK](https://github.com/adalinxx/lattice-sdk)
-(`@adalinxx/lattice-core`): canonical DAG-CBOR, the `bodyCID`, the
+(`@adalin/lattice-core`): canonical DAG-CBOR, the `bodyCID`, the
 `lattice-tx-v1` signing envelope, Ed25519 — it never trusts the node for *what
 it signs*. Signing runs only in the background worker. The SDK path is checked
 **bit-for-bit** against Lattice's published conformance vectors
@@ -270,7 +292,7 @@ CIDs, the envelope, and RFC 8032 signatures, with the negative cases rejected.
 
 The SDK is not published to npm. It is a **git submodule pinned to an exact
 commit** (`vendor/lattice-sdk`), and its packages are `file:` dependencies
-(`@adalinxx/lattice-core`, `-client`, `-relay`, `-volumes`). `npm ci` runs the
+(`@adalin/lattice-core`, `-client`, `-relay`, `-volumes`). `npm ci` runs the
 `prepare` script, which installs the SDK from its own lockfile and builds it
 (`npm run sdk` does the same by hand, e.g. after `npm ci --ignore-scripts`).
 esbuild then inlines it into the extension bundle: no remote code.

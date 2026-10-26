@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { NodeClient } from "@adalinxx/lattice-client";
+import type { NodeClient } from "@adalin/lattice-client";
 
 // The child can advance beyond the parent's last commitment. Verify that the
 // committed block remains on the child node's current chain, as the wallet does.

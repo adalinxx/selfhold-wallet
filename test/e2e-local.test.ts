@@ -17,14 +17,14 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { SubmissionError } from "@adalinxx/lattice-relay";
+import { SubmissionError } from "@adalin/lattice-relay";
 import { importPrivateKey, type Account } from "../src/lib/crypto/accounts.ts";
 import { signTransfer } from "../src/lib/wallet/session.ts";
 import { reader, submitter, submitChecked, sentStatus, statusText, feeWarning, describe } from "../src/lib/wallet/node.ts";
 import { createSigner } from "../src/lib/wallet/signer.ts";
 import { walletClient } from "../src/lib/wallet/client.ts";
 import type { Vault } from "../src/lib/crypto/keystore.ts";
-import type { Fetch } from "@adalinxx/lattice-client";
+import type { Fetch } from "@adalin/lattice-client";
 
 const bin = process.env.LATTICE_NODE_BIN;
 const run = promisify(execFile);

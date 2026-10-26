@@ -5,7 +5,7 @@
 
 import { hmac } from "@noble/hashes/hmac.js";
 import { sha512 } from "@noble/hashes/sha2.js";
-import { utf8, concatBytes } from "@adalinxx/lattice-core";
+import { utf8, concatBytes } from "@adalin/lattice-core";
 
 const HARDENED = 0x80000000;
 

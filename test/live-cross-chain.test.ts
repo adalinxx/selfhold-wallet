@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { activeDeposits, depositValues, reader, receiptWithdrawer, sentStatus } from "../src/lib/wallet/node.ts";
 import { isAccountAddress } from "../src/lib/wallet/session.ts";
-import { dagCborCIDBytes } from "@adalinxx/lattice-core";
+import { dagCborCIDBytes } from "@adalin/lattice-core";
 
 import { assertCommittedChild } from "./helpers/committed-child.ts";
 
