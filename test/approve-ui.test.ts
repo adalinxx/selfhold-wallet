@@ -372,13 +372,28 @@ test("an explicit zero page fee is not replaced by the saved default", async () 
   assert.equal(sent.find((m) => m.type === "decide")?.fee, "0");
 });
 
-test("a write while one is still pending on the chain waits for it, and cannot be signed", async () => {
+test("a write while one the node still holds is pending waits for it; one the node dropped frees the nonce", async () => {
   const settings = {
     endpoints: { "Nexus/fanfare/band": { url: NODE, acceptsSubmit: true, source: "user" } }, nodeMode: "custom",
-    pendingSubmissions: [{ cid: "c", chain: "Nexus/fanfare/band", from: me, to: holder, amount: "1", fee: "1", nonce: "7", at: 0 }],
+    pendingSubmissions: [{ cid: "bafypending", chain: "Nexus/fanfare/band", from: me, to: holder, amount: "1", fee: "1", nonce: "7", at: 0 }],
   };
-  const { sent, dom, text } = await open(buy, "1000", undefined, { settings });
-  assert.ok(text().includes("still pending on Nexus/fanfare/band"), text());
-  assert.ok(approveButton(dom)?.disabled ?? true, "nothing to sign at a nonce no node pools");
-  assert.ok(!sent.some((m) => m.type === "decide" && m.approve), "nothing was approved");
+  const node = (holds: boolean) => (url: URL) => {
+    if (url.pathname === `/api/state/account/${me}`) return new Response(JSON.stringify({ owner: me, balance: "1000", nonce: "7" }), { status: 200 });
+    if (url.pathname === "/api/chain/info") return new Response(JSON.stringify({ chain: ["Nexus", "fanfare", "band"] }), { status: 200 });
+    if (url.pathname === "/api/transaction/bafypending") {
+      return holds
+        ? new Response(JSON.stringify({ txCID: "bafypending", nonce: "7", signers: [me], chainPath: ["Nexus", "fanfare", "band"],
+          accountActions: [], depositActions: [], receiptActions: [], withdrawalActions: [] }), { status: 200 })
+        : new Response(JSON.stringify({ error: { message: "Not Found" } }), { status: 404 });
+    }
+    return undefined;
+  };
+  const held = await open(buy, "1000", undefined, { settings, fetch: node(true) });
+  assert.ok(held.text().includes("still pending on Nexus/fanfare/band"), held.text());
+  assert.ok(approveButton(held.dom)?.disabled ?? true, "nothing to sign at a nonce no node pools");
+
+  const dropped = await open(buy, "1000", undefined, { settings, fetch: node(false) });
+  assert.ok(!dropped.text().includes("still pending"), dropped.text());
+  assert.ok(dropped.text().includes("7 · account read from node.example"), `signed at the chain's nonce: ${dropped.text()}`);
+  assert.equal(approveButton(dropped.dom)?.disabled, false);
 });

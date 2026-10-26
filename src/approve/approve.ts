@@ -136,11 +136,20 @@ async function readNonce(chainPath: string[], address: string, keys: readonly st
         recordsUnread = `${new URL(url).host} did not serve this chain's records (${String((e as Error)?.message ?? e)}).`;
         return undefined;
       }
-      const nonce = nextNonce(state.nonce, chain, address, knownPending(settings, live));
+      const known = knownPending(settings, live);
+      let nonce = nextNonce(state.nonce, chain, address, known);
       // Nodes pool only a transaction that executes now, one per account: a
       // write signed past a pending one would be refused (`nonceAhead`).
+      // Only a transaction this node still knows holds the slot; one it
+      // dropped (evicted, refused, lost to a reorg) frees it.
       if (nonce > state.nonce) {
-        return { error: `This account has a transaction still pending on ${chain}. Approve this once it confirms (about one block).` };
+        const holding = known.filter((p) => p.chain === chain && p.from === address && BigInt(p.nonce) === state.nonce);
+        const alive = await Promise.all(holding.map(async (p) => p.cid === undefined
+          || (await sentStatus(node, p.cid, { from: address, nonce: state.nonce }).catch(() => null))?.kind !== "unknown to node"));
+        if (alive.some(Boolean)) {
+          return { error: `This account has a transaction still pending on ${chain}. Approve this once it confirms (about one block).` };
+        }
+        nonce = state.nonce;
       }
       return { nonce, stateNonce: state.nonce, balance: state.balance, node: url, stale, present,
         ...(market && { market }) };
