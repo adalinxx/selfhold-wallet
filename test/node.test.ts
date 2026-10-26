@@ -8,9 +8,9 @@ import { readFileSync } from "node:fs";
 import { SubmissionError } from "@adalin/lattice-relay";
 import { NodeError } from "@adalin/lattice-client";
 import { normalizeNodeURL, parseChainPath, originPattern, isLoopbackNodeURL } from "../src/lib/config.ts";
-import { loadSettings, recordOpenDeposit, completeOpenDeposit, recordOpenPurchase, archiveOpenPurchase, recordSent, forgetSent, recordPendingSubmission, completePendingSubmission, archivePendingSubmission, recordWithdrawalAttempt, forgetWithdrawalAttempt, defaultFee, parseFee, DEFAULT_SETTINGS, FALLBACK_FEE, type Settings } from "../src/lib/wallet/settings.ts";
+import { loadSettings, recordOpenDeposit, completeOpenDeposit, recordOpenPurchase, archiveOpenPurchase, recordSent, forgetSent, recordPendingSubmission, completePendingSubmission, archivePendingSubmission, recordWithdrawalAttempt, forgetWithdrawalAttempt, defaultFee, chosenFee, parseFee, DEFAULT_SETTINGS, type Settings } from "../src/lib/wallet/settings.ts";
 import type { SignedSubmit } from "../src/lib/wallet/types.ts";
-import { reader, submitter, submitChecked, CIDMismatchError, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, declaredHosts, chainNodes, spread, describe, feeWarning, highFeeWarning, nextReplacementFee, usualBlockWait, sentStatus, statusText, OPERATOR_DECLARED, verifySparseProof } from "../src/lib/wallet/node.ts";
+import { reader, submitter, submitChecked, CIDMismatchError, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, declaredHosts, chainNodes, spread, describe, feeWarning, highFeeWarning, nextReplacementFee, feeChoice, automaticFee, transferSize, blockCadence, readFeeMarket, sentStatus, statusText, OPERATOR_DECLARED, verifySparseProof } from "../src/lib/wallet/node.ts";
 import type { VolumeEntry } from "@adalin/lattice-volumes";
 import { importPrivateKey } from "../src/lib/crypto/accounts.ts";
 import { signTransfer } from "../src/lib/wallet/session.ts";
@@ -186,8 +186,10 @@ test("load migrates a legacy current withdrawal into the durable attempts list",
 test("fees: per-chain default, whole units, warned below the node's floor but never clamped", async () => {
   const stored = await loadSettings({ get: async () => ({ settings: { chain: "Nexus", chains: ["Nexus"], endpoints: {}, sent: {} } }), set: async () => {} });
   assert.deepEqual(stored.fees, {}, "settings saved before fees existed still load");
-  assert.equal(defaultFee(stored, "Nexus"), FALLBACK_FEE);
-  assert.equal(FALLBACK_FEE, "0", "a chain with no saved default starts at no fee");
+  assert.equal(chosenFee(stored, "Nexus"), undefined, "no saved fee: automatic");
+  assert.equal(defaultFee(stored, "Nexus"), "0", "automatic, before the node is read");
+  assert.equal(defaultFee(stored, "Nexus", 1n), "1", "automatic: the node's fee");
+  assert.equal(defaultFee({ ...stored, fees: { Nexus: "7" } }, "Nexus", 1n), "7", "a fixed fee is the person's, whatever the node says");
   assert.equal(defaultFee({ ...stored, fees: { "Nexus/testnet": "25" } }, "Nexus/testnet"), "25");
   assert.equal(parseFee("0"), 0n);
   assert.equal(parseFee(" 42 "), 42n);
@@ -201,20 +203,67 @@ test("fees: a fee of half the amount or more is flagged; replacements start a qu
   assert.equal(highFeeWarning(1n, 100n), undefined);
   assert.equal(highFeeWarning(0n, 0n), undefined, "no fee, nothing to flag");
   assert.match(highFeeWarning(50n, 100n)!, /at least half/);
+  assert.match(highFeeWarning(100n, 100n)!, /as much as/);
   assert.match(highFeeWarning(101n, 100n)!, /more than/);
-  assert.equal(nextReplacementFee(1n), 2n, "at least one more");
+  assert.equal(nextReplacementFee(0n), 1n, "at least one more");
+  assert.equal(nextReplacementFee(1n), 2n);
   assert.equal(nextReplacementFee(7n), 8n);
   assert.equal(nextReplacementFee(100n), 125n);
   assert.equal(nextReplacementFee(1n, 10n), 10n, "never under the node's floor");
 });
 
-test("fees: the usual wait for a block, from recent timestamps", () => {
-  const minute = 60_000n;
-  const at = (gaps: number[]) => gaps.reduce<bigint[]>((times, gap) => [...times, times.at(-1)! + BigInt(gap) * minute], [0n]);
-  assert.equal(usualBlockWait(at([10, 20, 30])), undefined, "too few blocks to say");
-  assert.equal(usualBlockWait(at([10, 12, 20, 22, 48]).reverse()), "~25 min", "four in five within 22 min, in any order");
-  assert.equal(usualBlockWait(at([1, 1, 1, 1, 1])), "~5 min");
-  assert.equal(usualBlockWait(at([30, 60, 90, 150, 400])), "~3 h");
+test("fees: automatic is the floor while the next block has room, and outbids it when full", () => {
+  const block = (lowestFee: bigint, full: boolean, transactionCount = 5000) => ({ transactionCount, bytes: 1_000_000, lowestFee, lowestFeeBytes: 300, full });
+  // An older node: only its floor.
+  assert.deepEqual(feeChoice({ minRelayFee: 1n }, 300), { minimum: 1n, nextBlock: 1n, soon: 1n, busy: false, known: false, waiting: 0 });
+  // An empty pool, and a pool with room: the floor makes the next block.
+  assert.equal(automaticFee({ minRelayFee: 0n, blocks: [] }), 0n);
+  assert.equal(automaticFee({ minRelayFee: 1n, blocks: [block(50n, false, 3)] }), 1n);
+  // Full blocks: strictly above the next block's lowest rate, priced for the size.
+  const busy = { minRelayFee: 1n, blocks: [block(30n, true), block(12n, true), block(3n, true), block(1n, false)] };
+  const choice = feeChoice(busy, 300);
+  assert.deepEqual(choice, { minimum: 1n, nextBlock: 31n, soon: 4n, busy: true, known: true, waiting: 20_000 });
+  assert.equal(feeChoice(busy, 600).nextBlock, 61n, "twice the bytes, twice the fee");
+  assert.equal(automaticFee(busy, () => 300), 31n);
+  // A fee that crosses an encoding boundary grows the transaction: priced until it pays for its own size.
+  assert.equal(automaticFee(busy, (fee) => fee >= 24n ? 330 : 300), 34n, "33 is the rate for 330 bytes; 34 is above it");
+  // A third block with room: within three blocks needs only the floor.
+  assert.equal(feeChoice({ minRelayFee: 2n, blocks: [block(9n, true), block(0n, false)] }, 300).soon, 2n);
+  // The floor still binds when the projected rate is lower.
+  assert.equal(feeChoice({ minRelayFee: 5n, blocks: [block(0n, true)] }, 300).nextBlock, 5n);
+});
+
+test("fees: a transfer's size is exact once its parts are known, and close before", () => {
+  const from = importPrivateKey("a1".repeat(32)).address;
+  const to = importPrivateKey("b2".repeat(32)).address;
+  const exact = transferSize({ from, to, amount: 10n, fee: 1n, nonce: 3n, chainPath: ["Nexus"] });
+  const placeholder = transferSize({ from, fee: 1n, chainPath: ["Nexus"] });
+  assert.ok(exact > 500 && exact < 700, `a transfer is about 600 bytes (${exact})`);
+  assert.ok(placeholder >= exact && placeholder - exact <= 16, "the placeholder never prices below the real transfer by much");
+});
+
+test("fees: block cadence reads as people say it", () => {
+  assert.equal(blockCadence(3_600_000n), "about every hour");
+  assert.equal(blockCadence(600_000n), "about every 10 minutes");
+  assert.equal(blockCadence(60_000n), "about every minute");
+  assert.equal(blockCadence(5_400_000n), "about every 90 minutes");
+  assert.equal(blockCadence(7_200_000n), "about every 2 hours");
+  assert.equal(blockCadence(15_000n), "about every 15 seconds");
+  assert.equal(blockCadence(undefined), undefined);
+});
+
+test("fees: a node's market reads its floor, projection and block time, and survives an older node", async () => {
+  const at = (routes: Record<string, unknown>) => reader("https://n.example", ["Nexus"], async (input) => {
+    const path = new URL(String(input)).pathname;
+    return path in routes ? new Response(JSON.stringify(routes[path]), { status: 200 }) : new Response("", { status: 404 });
+  });
+  const info = { chain: ["Nexus"], minRelayFee: "1" };
+  assert.deepEqual(await readFeeMarket(at({ "/api/chain/info": info })), { minRelayFee: 1n }, "an older node: the floor alone");
+  const spec = { targetBlockTime: "3600000", initialReward: "1", halvingInterval: "1", maxBlockSize: 1000000, maxNumberOfTransactionsPerBlock: "5000", premine: "0", halfLife: "120" };
+  const market = await readFeeMarket(at({ "/api/chain/info": info, "/api/fees": { minRelayFee: "2", blocks: [] }, "/api/chain/spec": spec }));
+  assert.deepEqual(market, { minRelayFee: 2n, blocks: [], blockTime: 3_600_000n }, "the projection's floor is the one it priced");
+  assert.equal((await readFeeMarket(at({ "/api/chain/info": { chain: ["Nexus"] } }))).minRelayFee, 0n, "no floor reported: none");
+  await assert.rejects(readFeeMarket(at({})), "chain info is required");
 });
 
 type Route = (url: URL, init?: RequestInit) => { status: number; body: unknown } | undefined;

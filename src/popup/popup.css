@@ -208,3 +208,16 @@ h2.section-label { margin-top: var(--s-4); padding-top: var(--s-3); border-top: 
 /* A row of home actions with one button in it: the button takes the row. */
 .primary-actions > :only-child { grid-column: 1 / -1; }
 .account-name-field { width: 100%; min-width: 0; padding: 2px var(--s-1); font: inherit; }
+/* A warning box holds nothing until there is a warning. */
+.warn:empty { display: none; }
+/* Fee speeds, shown only while blocks are full: one press each. */
+.fee-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); }
+.fee-choices:empty { display: none; }
+.fee-choices .btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--s-2) var(--s-1); text-transform: none; letter-spacing: 0; }
+.fee-choices .btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.fee-choice-label { font-size: var(--fs-12); }
+.fee-choice-value { font-size: var(--fs-14); font-variant-numeric: tabular-nums; }
+.fee-mode { align-items: flex-start; }
+.fee-mode input { margin-top: 3px; }
+.fee-mode-text { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-14); }
+.transaction-details .mono { overflow-wrap: anywhere; }

@@ -43,6 +43,8 @@ async function open(call: unknown, balance: string, layout?: (dom: JSDOM) => voi
     const url = new URL(String(input));
     if (env.fetch) return env.fetch(url) ?? new Response("{}", { status: 404 });
     if (url.pathname === `/api/state/account/${me}`) return new Response(JSON.stringify({ owner: me, balance, nonce: "7" }), { status: 200 });
+    // A node that reports no relay floor: it admits any fee.
+    if (url.pathname === "/api/chain/info") return new Response(JSON.stringify({ chain: url.searchParams.get("chainPath")!.split("/") }), { status: 200 });
     return new Response("{}", { status: 404 });
   } });
   dom.window.close = () => { sent.push({ type: "closed" }); };
@@ -108,6 +110,47 @@ test("an opened request is signed as the account chosen here, and its label is s
   await settle();
   const decided = sent.find((m) => m.type === "decide");
   assert.deepEqual({ address: decided?.address, present: decided?.present, fee: decided?.fee, nonce: decided?.nonce }, { address: me, present: [], fee: "0", nonce: "7" });
+});
+
+test("a request that names no fee pays the automatic fee of the node the account is read from, shown before signing", async () => {
+  const withFloor = (floor: string) => (url: URL) => url.pathname === `/api/state/account/${me}`
+    ? new Response(JSON.stringify({ owner: me, balance: "1000", nonce: "7" }), { status: 200 })
+    : url.pathname === "/api/chain/info" ? new Response(JSON.stringify({ chain: ["Nexus", "fanfare", "band"], minRelayFee: floor }), { status: 200 })
+    : undefined;
+  const intent = {
+    version: 1, chainPath: ["Nexus", "fanfare", "band"], expiresAt: "2030-01-01T00:00:00Z",
+    actions: [{ key: "name/rae", oldValue: `${holder}@250`, newValue: "{account}" }], payments: [{ to: holder, amount: "250" }],
+  };
+  const opened = await open({ method: "openRequest", params: intent }, "1000", undefined, { fetch: withFloor("2") });
+  assert.equal(approveButton(opened.dom).textContent, "Pay 252", "drawn again at the node's floor");
+  assert.ok(one(opened.dom, ".summary").includes("Balance: 1,000 → 748"));
+  approveButton(opened.dom).click();
+  await settle();
+  assert.equal(opened.sent.find((m) => m.type === "decide")?.fee, "2", "signed as shown");
+
+  const { fee: _, ...noFee } = buy.params;
+  const written = await open({ method: "writeRecords", params: noFee }, "1000", undefined, { fetch: withFloor("3") });
+  assert.equal(approveButton(written.dom).textContent, "Pay 253");
+  approveButton(written.dom).click();
+  await settle();
+  assert.equal(written.sent.find((m) => m.type === "decide")?.fee, "3");
+
+  const fixed = await open({ method: "writeRecords", params: noFee }, "1000", undefined, {
+    fetch: withFloor("3"),
+    settings: { endpoints: { "Nexus/fanfare/band": { url: NODE, acceptsSubmit: true, source: "user" } }, nodeMode: "custom", fees: { "Nexus/fanfare/band": "5" } },
+  });
+  assert.equal(approveButton(fixed.dom).textContent, "Pay 255", "a fixed fee is the person's, not the node's");
+});
+
+test("an automatic fee the node will not tell is never signed at a guess", async () => {
+  const { dom, sent } = await open({ method: "writeRecords", params: { ...buy.params, fee: undefined } }, "1000", undefined, {
+    fetch: (url) => url.pathname === `/api/state/account/${me}` ? new Response(JSON.stringify({ owner: me, balance: "1000", nonce: "7" }), { status: 200 }) : undefined,
+  });
+  assert.match(one(dom, "#decision-status"), /Could not read the network fee from node\.example\. Try again, or set a fixed fee for Nexus\/fanfare\/band in the wallet\./);
+  assert.equal(approveButton(dom).disabled, true);
+  approveButton(dom).click();
+  await settle();
+  assert.equal(sent.find((m) => m.type === "decide"), undefined);
 });
 
 test("an opened request's proposed fee is the one shown and signed", async () => {

@@ -70,24 +70,38 @@ Reads go through the SDK's `NodeClient` (`/api/state/account`,
 
 ### Fees
 
-The fee is yours: there is no estimate service. It is the debit-over-credit
-excess the miner collects (the SDK's `buildTransfer`).
+The fee is the debit-over-credit excess the miner collects (the SDK's
+`buildTransfer`). The wallet prices it from the node it sends through; there
+is no outside estimate service.
 
-- Each chain's default fee is set under **Default fee** (0 until you change
-  it). Consensus accepts a zero fee; whether a node relays it is its
-  operator's policy.
-- The send screen states the fee in one line, with how long recent blocks
-  have taken (four in five of the last 25 came within that time). The field
-  stays editable under **Custom fee**.
-- The chosen endpoint reports its own relay floor (`minRelayFee` in
-  `/api/chain/info`, its operator's policy, never consensus). A fee below it
-  is **warned about, not raised**: the send goes as you set it, and the node
-  may refuse it (`belowMinRelayFee`). The hosted nodes' floor is 1.
-- The review screen shows the fee, the total, and the node's minimum, and
-  warns when the fee is at least half the amount.
-- **Increase fee** on a pending send starts a quarter above the previous fee
-  (at least 1 more). Miners rank by fee per byte and a replacement is the same
-  size, so +1 on a large fee rarely moves it up.
+- **Automatic** (each chain's default): the node's relay floor (`minRelayFee`
+  in `/api/chain/info`, its operator's policy, never consensus) while the next
+  block has room. When the node's pool projects full blocks (`GET /api/fees`),
+  the fee that ranks this transaction into the next one: a rate above that
+  block's lowest, for the transaction's exact size (the SDK's
+  `signedTransactionSize` and `feeToOutbid`). A node without `/api/fees`
+  prices at its floor.
+- **Fixed**: under **Settings → Network fee**, one fee for every transaction
+  on the chain, whatever blocks hold.
+- The send screen states the fee in one line: what it buys (the next block
+  has room; or, when blocks are full, the next block, within three, or many
+  blocks), and the chain's target block time from `/api/chain/spec`. While
+  blocks are full it offers **Next block**, **In 3 blocks** and **Minimum**.
+  Any fee can be typed under **Custom fee**, which also shows the node's floor.
+- A fee below the floor is **warned about, not raised**: the transaction goes
+  as set, and the node may refuse it (`belowMinRelayFee`). A fee you typed or
+  picked is never changed by the wallet.
+- The review screen shows the fee, the total and the node's minimum. It warns
+  when the fee is at least half the amount, and when blocks are full and the
+  fee is below what the next block needs.
+- Website requests that name no fee pay the chain's fixed fee, else the
+  automatic fee of the node the account is read from, drawn again once that
+  node answers, so what is signed is what was shown.
+- **Increase fee** on a pending send starts at the most of: a quarter above
+  the previous fee (at least 1 more), the node's floor, and what the next
+  block needs. Miners rank by fee per byte and a replacement is the same size,
+  so 1 more on a large fee rarely moves it up. When the next block has room,
+  the screen says a higher fee is not needed.
 
 ### Status
 
