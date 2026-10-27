@@ -10,7 +10,7 @@ import { NodeError } from "@adalin/lattice-client";
 import { normalizeNodeURL, parseChainPath, originPattern, isLoopbackNodeURL } from "../src/lib/config.ts";
 import { loadSettings, recordOpenDeposit, completeOpenDeposit, recordOpenPurchase, archiveOpenPurchase, recordSent, forgetSent, recordPendingSubmission, completePendingSubmission, archivePendingSubmission, recordWithdrawalAttempt, forgetWithdrawalAttempt, defaultFee, chosenFee, parseFee, DEFAULT_SETTINGS, type Settings } from "../src/lib/wallet/settings.ts";
 import type { SignedSubmit } from "../src/lib/wallet/types.ts";
-import { reader, submitter, submitChecked, CIDMismatchError, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, declaredHosts, chainNodes, spread, describe, feeWarning, highFeeWarning, nextReplacementFee, feeChoice, automaticFee, transferSize, blockCadence, readFeeMarket, sentStatus, statusText, OPERATOR_DECLARED, verifySparseProof } from "../src/lib/wallet/node.ts";
+import { reader, submitter, submitChecked, CIDMismatchError, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, declaredHosts, chainNodes, spread, describe, feeWarning, highFeeWarning, nextReplacementFee, replacementFee, feeChoice, automaticFee, transferSize, blockCadence, readFeeMarket, sentStatus, statusText, OPERATOR_DECLARED, verifySparseProof } from "../src/lib/wallet/node.ts";
 import type { VolumeEntry } from "@adalin/lattice-volumes";
 import { importPrivateKey } from "../src/lib/crypto/accounts.ts";
 import { signTransfer } from "../src/lib/wallet/session.ts";
@@ -211,6 +211,15 @@ test("fees: a fee of half the amount or more is flagged; replacements start a qu
   assert.equal(nextReplacementFee(1000n, 1000n), 2000n, "the pool asks the floor more, not the floor");
   assert.equal(nextReplacementFee(100n), 125n);
   assert.equal(nextReplacementFee(1n, 10n), 11n, "never under the node's floor more than before");
+});
+
+test("fees: a replacement raises the previous fee with room, and enters the next block paying the floor more when full", () => {
+  const block = (lowestFee: bigint, full: boolean) => ({ transactionCount: 5000, bytes: 1_000_000, lowestFee, lowestFeeBytes: 300, full });
+  assert.equal(replacementFee(10n, { minRelayFee: 1n }), 12n, "an older node: the previous fee raised");
+  assert.equal(replacementFee(10n, { minRelayFee: 1n, blocks: [block(50n, false)] }), 12n, "room: the previous attempt is in the next block");
+  const full = { minRelayFee: 10n, blocks: [block(50n, true)] };
+  assert.equal(replacementFee(10n, full, () => 300), 61n, "outbid the lowest (51) and pay the floor (10) more");
+  assert.equal(replacementFee(100n, full, () => 300), 125n, "already ahead of the lowest: raised is enough");
 });
 
 test("fees: automatic is the floor while the next block has room, and outbids it when full", () => {

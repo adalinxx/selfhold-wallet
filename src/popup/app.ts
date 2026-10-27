@@ -8,7 +8,7 @@ import type { Fetch } from "@adalin/lattice-client";
 import { nodeCookieAuthorization, signedTransactionSize } from "@adalin/lattice-core";
 import type { WalletClient } from "../lib/wallet/client.ts";
 import { newMnemonic, isValidMnemonic, keyFilePrivateKey } from "../lib/crypto/accounts.ts";
-import { reader, submitter, submitChecked, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, declaredHosts, spread, describe, feeWarning, highFeeWarning, nextReplacementFee, readFeeMarket, feeChoice, automaticFee, transferSize, blockCadence, ESTIMATED_TRANSACTION_SIZE, type FeeMarket, type FeeChoice, sentStatus, statusText, activeDeposits, depositValues, receiptWithdrawer, type ActiveDeposit, OPERATOR_DECLARED } from "../lib/wallet/node.ts";
+import { reader, submitter, submitChecked, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, declaredHosts, spread, describe, feeWarning, highFeeWarning, nextReplacementFee, replacementFee, readFeeMarket, feeChoice, automaticFee, transferSize, blockCadence, ESTIMATED_TRANSACTION_SIZE, type FeeMarket, type FeeChoice, sentStatus, statusText, activeDeposits, depositValues, receiptWithdrawer, type ActiveDeposit, OPERATOR_DECLARED } from "../lib/wallet/node.ts";
 import { ALL_HTTPS_ORIGINS, HOSTED_NODE_ORIGINS, LATTICE_BUILD_RPC, LATTICE_EXPLORER_RPC, LATTICE_TESTNET_RPC, ROOT_CHAIN, parseChainPath, normalizeNodeURL, originPattern, isLoopbackNodeURL } from "../lib/config.ts";
 import { discoveryStarts } from "../lib/wallet/nonce.ts";
 import { loadSettings, saveSettings, recordOpenDeposit, completeOpenDeposit, recordOpenPurchase, archiveOpenPurchase, recordWithdrawalAttempt, purchaseWithdrawalAttempts, recordSent, recordPendingSubmission, archivePendingSubmission, defaultFee, chosenFee, parseFee, type Settings, type ChosenEndpoint, type KeyValueStore, type OpenPurchase, type SentTransaction } from "../lib/wallet/settings.ts";
@@ -2481,9 +2481,8 @@ function pendingSubmissionsScreen() {
 }
 
 /**
- * A replacement's fee, once the node is read: a quarter above the attempt it
- * replaces, the node's floor, or what the next block needs, whichever is
- * most, unless the person has typed one meanwhile.
+ * A replacement's fee, once the node is read (`replacementFee`), unless the
+ * person has typed one meanwhile.
  */
 function suggestReplacementFee(input: HTMLInputElement, previous: bigint, url: string, chainPath: readonly string[], auth: Promise<string | undefined>,
   size?: (fee: bigint) => number, why?: HTMLElement) {
@@ -2493,10 +2492,10 @@ function suggestReplacementFee(input: HTMLInputElement, previous: bigint, url: s
     // Typed, or tried (`used`: an attempt read it): the fee is no longer the wallet's to suggest.
     if (typed || input.dataset.used) return;
     const raised = nextReplacementFee(previous, market.minRelayFee);
-    const next = automaticFee(market, size);
-    input.value = (next > raised ? next : raised).toString();
+    const next = replacementFee(previous, market, size);
+    input.value = next.toString();
     const room = market.blocks !== undefined && !market.blocks[0]?.full;
-    if (why) why.textContent = next > raised ? `Blocks are full: the next block needs ${fmt(next)}.`
+    if (why) why.textContent = next > raised ? `Blocks are full: a replacement must be in the next block and raise what it pays, so ${fmt(next)}.`
       : room && previous >= market.minRelayFee ? "The next block has room: this transaction should be in it without a higher fee."
       : market.minRelayFee > 1n && raised === previous + market.minRelayFee ? `This node asks a replacement to pay its minimum, ${fmt(market.minRelayFee)}, more.`
       : raised === previous + 1n ? "1 more than the previous fee: the least a replacement can pay."

@@ -360,7 +360,7 @@ export { OPERATOR_DECLARED };
 
 const REFUSALS: Record<SubmissionRefusal, string> = {
   belowMinRelayFee: "the fee is below this node's minimum relay fee; raise the fee or use another node",
-  feeTooLow: "it conflicts with a pending transaction (the same nonce, name, deposit or receipt); a replacement must pay a higher fee",
+  feeTooLow: "it conflicts with a pending transaction (the same nonce, name, deposit or receipt); a replacement must pay a higher fee, enough to be in the next block",
   conflictingNonce: "this nonce is taken by a conflicting pending transaction",
   nonceAhead: "an earlier transaction from this account is still pending; send this once it is mined",
   unavailable: "this node cannot check it yet; try again shortly",
@@ -484,8 +484,28 @@ export function highFeeWarning(fee: bigint, amount: bigint): string | undefined 
  */
 export function nextReplacementFee(previous: bigint, minRelayFee?: bigint): bigint {
   const raised = previous + (previous / 4n > 1n ? previous / 4n : 1n);
-  const required = previous + (minRelayFee !== undefined && minRelayFee > 1n ? minRelayFee : 1n);
+  const required = previous + replacementIncrement(minRelayFee);
   return required > raised ? required : raised;
+}
+
+/** How much more a node asks the next block to pay for a replacement: its floor, and at least 1. */
+function replacementIncrement(minRelayFee?: bigint): bigint {
+  return minRelayFee !== undefined && minRelayFee > 1n ? minRelayFee : 1n;
+}
+
+/**
+ * A replacement's fee from a node's market. The node takes a replacement
+ * that is in the next block and makes it pay the node's floor more. With
+ * room, the next block holds the attempt it replaces, so the previous fee
+ * raised (`nextReplacementFee`) is enough. Full, the replacement pushes out
+ * the block's lowest: it outbids that (`automaticFee`) and pays the floor
+ * more besides, wherever the attempt it replaces sits.
+ */
+export function replacementFee(previous: bigint, market: FeeMarket, size?: (fee: bigint) => number): bigint {
+  const raised = nextReplacementFee(previous, market.minRelayFee);
+  if (market.blocks?.[0]?.full !== true) return raised;
+  const entry = automaticFee(market, size) + replacementIncrement(market.minRelayFee);
+  return entry > raised ? entry : raised;
 }
 
 /**
