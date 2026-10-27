@@ -14,9 +14,8 @@ import { addressGroups, addressNames, nameAddresses, otherHosts, payeeRecords, p
 import type { WalletState } from "../lib/wallet/types.ts";
 import { chosenFee, defaultFee, loadSettings } from "../lib/wallet/settings.ts";
 import { chosenNodes, discoveryStarts, knownPending, livePageWrites, nextNonce, type PageWrite } from "../lib/wallet/nonce.ts";
-import { automaticFee, browserFetch, chainNodes, readFeeMarket, reader, recordsPresent, sentStatus, type FeeMarket } from "../lib/wallet/node.ts";
+import { automaticFee, browserFetch, chainNodes, readFeeMarket, reader, recordsPresent, sentStatus, weigh, type FeeMarket } from "../lib/wallet/node.ts";
 import { recordsBody } from "../lib/wallet/session.ts";
-import { signedTransactionSize } from "@adalin/lattice-core";
 import { ALL_HTTPS_ORIGINS, originPattern } from "../lib/config.ts";
 import { icon } from "../popup/icons.ts";
 
@@ -496,12 +495,12 @@ function reviewWrite(mine: number, write: WriteRequest, address: string, origin:
     bar.arm();
   }
   /**
-   * Whether the node's automatic fee, priced for this write's exact size,
+   * Whether the node's automatic fee, priced for this write's exact weight,
    * differs from the one shown: then the review is drawn again at it.
    */
   const repriced = (read: NonceRead) => {
     if (!reprice || !("nonce" in read) || !read.market) return false;
-    const priced = automaticFee(read.market, (f) => signedTransactionSize(recordsBody(address, {
+    const priced = automaticFee(read.market, (f) => weigh(read.market, recordsBody(address, {
       actions, payments: payments.map((p) => ({ to: p.to, amount: BigInt(p.amount) })), fee: f, nonce: read.nonce, chainPath: [...chainPath],
     }))).toString();
     if (priced === fee) return false;
