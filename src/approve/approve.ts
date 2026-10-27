@@ -14,9 +14,8 @@ import { addressGroups, addressNames, nameAddresses, otherHosts, payeeRecords, p
 import type { WalletState } from "../lib/wallet/types.ts";
 import { chosenFee, defaultFee, loadSettings } from "../lib/wallet/settings.ts";
 import { chosenNodes, discoveryStarts, knownPending, livePageWrites, nextNonce, type PageWrite } from "../lib/wallet/nonce.ts";
-import { automaticFee, browserFetch, chainNodes, readFeeMarket, reader, recordsPresent, sentStatus, type FeeMarket } from "../lib/wallet/node.ts";
+import { automaticFee, browserFetch, chainNodes, readFeeMarket, reader, recordsPresent, sentStatus, weigh, type FeeMarket } from "../lib/wallet/node.ts";
 import { recordsBody } from "../lib/wallet/session.ts";
-import { signedTransactionSize } from "@adalin/lattice-core";
 import { ALL_HTTPS_ORIGINS, originPattern } from "../lib/config.ts";
 import { icon } from "../popup/icons.ts";
 
@@ -136,7 +135,22 @@ async function readNonce(chainPath: string[], address: string, keys: readonly st
         recordsUnread = `${new URL(url).host} did not serve this chain's records (${String((e as Error)?.message ?? e)}).`;
         return undefined;
       }
-      return { nonce: nextNonce(state.nonce, chain, address, knownPending(settings, live)), stateNonce: state.nonce, balance: state.balance, node: url, stale, present,
+      const known = knownPending(settings, live);
+      let nonce = nextNonce(state.nonce, chain, address, known);
+      // Nodes pool only a transaction that executes now, one per account: a
+      // write signed past a pending one would be refused (`nonceAhead`).
+      // Only a transaction this node still knows holds the slot; one it
+      // dropped (evicted, refused, lost to a reorg) frees it.
+      if (nonce > state.nonce) {
+        const holding = known.filter((p) => p.chain === chain && p.from === address && BigInt(p.nonce) === state.nonce);
+        const alive = await Promise.all(holding.map(async (p) => p.cid === undefined
+          || (await sentStatus(node, p.cid, { from: address, nonce: state.nonce }).catch(() => null))?.kind !== "unknown to node"));
+        if (alive.some(Boolean)) {
+          return { error: `This account has a transaction still pending on ${chain}. Approve this once it confirms (about one block).` };
+        }
+        nonce = state.nonce;
+      }
+      return { nonce, stateNonce: state.nonce, balance: state.balance, node: url, stale, present,
         ...(market && { market }) };
     } catch { return undefined; /* not this node */ }
   };
@@ -481,12 +495,12 @@ function reviewWrite(mine: number, write: WriteRequest, address: string, origin:
     bar.arm();
   }
   /**
-   * Whether the node's automatic fee, priced for this write's exact size,
+   * Whether the node's automatic fee, priced for this write's exact weight,
    * differs from the one shown: then the review is drawn again at it.
    */
   const repriced = (read: NonceRead) => {
     if (!reprice || !("nonce" in read) || !read.market) return false;
-    const priced = automaticFee(read.market, (f) => signedTransactionSize(recordsBody(address, {
+    const priced = automaticFee(read.market, (f) => weigh(read.market, recordsBody(address, {
       actions, payments: payments.map((p) => ({ to: p.to, amount: BigInt(p.amount) })), fee: f, nonce: read.nonce, chainPath: [...chainPath],
     }))).toString();
     if (priced === fee) return false;
