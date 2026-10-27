@@ -2498,7 +2498,7 @@ function suggestReplacementFee(input: HTMLInputElement, previous: bigint, url: s
     const room = market.blocks !== undefined && !market.blocks[0]?.full;
     if (why) why.textContent = next > raised ? `Blocks are full: the next block needs ${fmt(next)}.`
       : room && previous >= market.minRelayFee ? "The next block has room: this transaction should be in it without a higher fee."
-      : raised === market.minRelayFee && raised > previous + 1n ? `This node's minimum is ${fmt(raised)}.`
+      : market.minRelayFee > 1n && raised === previous + market.minRelayFee ? `This node asks a replacement to pay its minimum, ${fmt(market.minRelayFee)}, more.`
       : raised === previous + 1n ? "1 more than the previous fee: the least a replacement can pay."
       : "A quarter above the previous fee: miners rank by fee per byte, so 1 more rarely moves a transaction ahead.";
   }).catch(() => {});

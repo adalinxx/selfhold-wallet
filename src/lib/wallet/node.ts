@@ -360,8 +360,11 @@ export { OPERATOR_DECLARED };
 
 const REFUSALS: Record<SubmissionRefusal, string> = {
   belowMinRelayFee: "the fee is below this node's minimum relay fee; raise the fee or use another node",
-  feeTooLow: "a transaction with this nonce is already pending; a replacement must pay a higher fee",
+  feeTooLow: "it conflicts with a pending transaction (the same nonce, name, deposit or receipt); a replacement must pay a higher fee",
   conflictingNonce: "this nonce is taken by a conflicting pending transaction",
+  nonceAhead: "an earlier transaction from this account is still pending; send this once it is mined",
+  unavailable: "this node cannot check it yet; try again shortly",
+  insufficientFunds: "the account's balance is committed to pending transactions; try again once they are mined",
   invalidState: "the chain's current state rejects it (balance or nonce changed?)",
   tooLarge: "the transaction is too large for this node's pool",
   full: "this node's pool is full; try later or raise the fee",
@@ -398,7 +401,8 @@ export async function submitChecked(relay: TransactionSubmitter, signed: SignedS
 export function isDefiniteSubmissionRefusal(error: unknown): boolean {
   return error instanceof SubmissionError && error.status >= 400 && error.status < 500
     && error.status !== 401 && error.status !== 403 && error.status !== 408 && error.status !== 429
-    && ["belowMinRelayFee", "feeTooLow", "invalidState", "invalidSignature", "invalidTransaction"].includes(error.reason ?? "");
+    && ["belowMinRelayFee", "feeTooLow", "invalidState", "invalidSignature", "invalidTransaction",
+      "nonceAhead", "unavailable", "insufficientFunds"].includes(error.reason ?? "");
 }
 
 /** The node named the transaction itself as too big for it to take. */
@@ -415,7 +419,8 @@ export function shouldOfferFeeReplacement(error: unknown): boolean {
 
 export function isTransientSubmissionRefusal(error: unknown): boolean {
   return error instanceof SubmissionError && (error.status === 401 || error.status === 403 || error.status === 429
-    || error.reason === "full" || error.reason === "shuttingDown");
+    || error.reason === "full" || error.reason === "shuttingDown" || error.reason === "nonceAhead"
+    || error.reason === "unavailable" || error.reason === "insufficientFunds");
 }
 
 /** A browser permission failure, not an endpoint outage. */
@@ -473,13 +478,14 @@ export function highFeeWarning(fee: bigint, amount: bigint): string | undefined 
 
 /**
  * Where a same-nonce replacement's fee starts: a quarter more than the
- * attempt it replaces (at least 1 more, as the pool requires strictly more),
- * and never under the node's floor. Miners rank by fee per byte, and a
- * replacement is the same size, so +1 on a large fee rarely moves it up.
+ * attempt it replaces, and at least what the pool requires, the node's floor
+ * more (at least 1). Miners rank by fee per byte, and a replacement is the
+ * same size, so +1 on a large fee rarely moves it up.
  */
 export function nextReplacementFee(previous: bigint, minRelayFee?: bigint): bigint {
   const raised = previous + (previous / 4n > 1n ? previous / 4n : 1n);
-  return minRelayFee !== undefined && minRelayFee > raised ? minRelayFee : raised;
+  const required = previous + (minRelayFee !== undefined && minRelayFee > 1n ? minRelayFee : 1n);
+  return required > raised ? required : raised;
 }
 
 /**

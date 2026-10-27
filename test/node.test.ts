@@ -208,8 +208,9 @@ test("fees: a fee of half the amount or more is flagged; replacements start a qu
   assert.equal(nextReplacementFee(0n), 1n, "at least one more");
   assert.equal(nextReplacementFee(1n), 2n);
   assert.equal(nextReplacementFee(7n), 8n);
+  assert.equal(nextReplacementFee(1000n, 1000n), 2000n, "the pool asks the floor more, not the floor");
   assert.equal(nextReplacementFee(100n), 125n);
-  assert.equal(nextReplacementFee(1n, 10n), 10n, "never under the node's floor");
+  assert.equal(nextReplacementFee(1n, 10n), 11n, "never under the node's floor more than before");
 });
 
 test("fees: automatic is the floor while the next block has room, and outbids it when full", () => {
@@ -338,6 +339,12 @@ test("submission posts the signer's payload to /transactions; refusals are typed
   assert.equal(isTransientSubmissionRefusal(new SubmissionError(401)), true);
   assert.equal(isTransientSubmissionRefusal(new SubmissionError(429, "rate limited")), true);
   assert.equal(isTransientSubmissionRefusal(new SubmissionError(400, "full")), true);
+  // The funded-only pool's retriable refusals: wait and resend, never pay more.
+  for (const reason of ["nonceAhead", "unavailable", "insufficientFunds"]) {
+    assert.equal(isDefiniteSubmissionRefusal(new SubmissionError(400, reason)), true, reason);
+    assert.equal(isTransientSubmissionRefusal(new SubmissionError(400, reason)), true, reason);
+    assert.equal(shouldOfferFeeReplacement(new SubmissionError(400, reason)), false, reason);
+  }
 });
 
 const projection = (extra: Record<string, unknown> = {}) => ({
