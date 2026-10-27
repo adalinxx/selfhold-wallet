@@ -8,4 +8,4 @@ Use separate keys for separate networks. A child named testnet within the Nexus 
 
 Transactions need not have on-chain expiry to be safe. Preserve signed recovery records after network errors or refusals: a gateway may admit the transaction before returning an error. Rebroadcast the exact saved bytes to retry. Creating a new payment with a later nonce can pay twice if the first payment confirms. The wallet warns when the account has unresolved transfers and requires an explicit decision before signing another one.
 
-Specification: https://github.com/adalinxx/Lattice/blob/43.1.0/docs/spec.md#71-signature-verification
+Specification: https://github.com/0xLattice/Lattice/blob/43.1.0/docs/spec.md#71-signature-verification
