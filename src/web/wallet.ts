@@ -16,7 +16,7 @@ import { otherHosts, payeeRecords, shortAddress } from "../lib/wallet/review.ts"
 import { signMessage } from "../lib/wallet/session.ts";
 import type { PageWriteRequest } from "../lib/wallet/provider.ts";
 import { el, fmt, fullAddress, label, named, notice, row, site, valueNode, visible } from "../approve/view.ts";
-import { create, forget, saved, signIn, unlock, type Unlocked } from "./account.ts";
+import { RP_ID, create, forget, saved, signIn, unlock, type Unlocked } from "./account.ts";
 import { CHANNEL, parseCall, type SiteRoute, type WindowCall } from "./protocol.ts";
 import { NeedsCoins, quote, send, type Progress, type Quote, type Route } from "./send.ts";
 import { Stopped, workDevice } from "./sponsor.ts";
@@ -28,8 +28,9 @@ const ARM_MS = 800;
 const say = (text: string) => el("p", { className: "meta", textContent: text });
 const message = (error: unknown) => String((error as Error)?.message ?? error);
 
+/** Refuses to run inside a frame, or anywhere but the wallet's own host (and localhost, for tests). */
 function refuseFrame(): boolean {
-  if (window.top === window) return false;
+  if (window.top === window && (location.hostname === RP_ID || location.hostname === "localhost")) return false;
   document.documentElement.replaceChildren();
   return true;
 }

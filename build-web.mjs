@@ -2,7 +2,7 @@
 // wallet.selfhold.app, and selfhold.js, the script a site loads to open it.
 // Run: `node build-web.mjs` (add --watch to watch).
 import * as esbuild from "esbuild";
-import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync } from "node:fs";
 
 const watch = process.argv.includes("--watch");
 const outdir = "dist-web";
@@ -14,7 +14,7 @@ cpSync("src/web/index.html", `${outdir}/index.html`);
 cpSync("src/popup/popup.css", `${outdir}/popup.css`);
 cpSync("src/approve/approve.css", `${outdir}/approve.css`);
 cpSync("src/web/web.css", `${outdir}/web.css`);
-writeFileSync(`${outdir}/CNAME`, "wallet.selfhold.app\n");
+// The domain itself is set in the repository's Pages settings: an Actions deploy reads no CNAME file.
 
 const ctx = await esbuild.context({
   entryPoints: {

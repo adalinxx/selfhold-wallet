@@ -1,6 +1,7 @@
 name: Web wallet
 
-# Publishes dist-web/ to GitHub Pages: wallet.selfhold.app.
+# Publishes dist-web/ to GitHub Pages, once every test passes. The domain,
+# wallet.selfhold.app, and HTTPS are set in the repository's Pages settings.
 on:
   push:
     branches: [main]
@@ -8,8 +9,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -18,6 +17,10 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -31,10 +34,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: node --test test/web.test.ts
+      - run: npm test
+      - run: npm run conformance
       - run: npm run build:web
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v4
         with:
           path: dist-web
       - id: deployment

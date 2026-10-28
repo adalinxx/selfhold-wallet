@@ -15,8 +15,14 @@ const SALT = new TextEncoder().encode("Selfhold account key, v1");
 export interface Saved { credential: string; address: string }
 export interface Unlocked { address: string; key: Uint8Array }
 
-/** The passkeys' domain: the wallet's own host, wallet.selfhold.app (localhost, in tests). FROZEN once accounts exist. */
-export const rpId = (hostname = location.hostname) => hostname;
+/** The passkeys' domain. FROZEN once accounts exist. */
+export const RP_ID = "wallet.selfhold.app";
+/**
+ * The passkeys' domain for a page on `hostname`: always RP_ID (localhost, in
+ * tests). Served from any other host, the browser refuses RP_ID, so a
+ * misplaced copy can't make passkeys that other pages there could ask.
+ */
+export const rpId = (hostname = location.hostname) => (hostname === "localhost" ? "localhost" : RP_ID);
 
 export function saved(): Saved | null {
   try {

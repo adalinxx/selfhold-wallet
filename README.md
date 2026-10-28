@@ -277,9 +277,9 @@ payment window opens, and gets back only what the person approved. The
 account's key comes from a passkey (WebAuthn's PRF extension). The passkey
 belongs to `wallet.selfhold.app`, so it makes the same account on every site
 that uses Selfhold, whatever the site's domain, and no other page, on
-selfhold.app or anywhere, can ask it for the key. The window asks the passkey again
-for every approval, holds the key only while it signs, and refuses to run
-inside a frame.
+selfhold.app or anywhere, can ask it for the key. The window asks the passkey
+again for every approval, holds the key only while it signs, and refuses to
+run inside a frame or on any other host.
 
 A site loads `selfhold.js` (built into `dist-web/`) and makes the same calls
 as `window.lattice`, each from a click:
