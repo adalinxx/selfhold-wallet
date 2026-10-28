@@ -107,8 +107,10 @@ export interface Platform {
   writeRequests?: boolean;
   /** Reopen a backup flow in a full page (the extension: a tab, for camera, files and print). */
   openFullPage?(view: "backup" | "restore" | "wallet"): void;
-  /** Start in this flow (the full page the popup opened). */
-  initialView?: "backup" | "restore";
+  /** Start in this flow (the full page the popup opened, or the window an account handed over opened). */
+  initialView?: "backup" | "restore" | "web-account";
+  /** Open Selfhold's window, to hand its account here (the extension: a tab at wallet.selfhold.app). */
+  openWebWallet?(): void;
   /** Save a text file (default: a browser download); resolves to where it went. */
   saveFile?(name: string, text: string): Promise<string | void>;
   /** Print the page (default: window.print). */
@@ -663,6 +665,10 @@ function route() {
   if (start === "restore" && !st.initialized) return restoreMenu(backupHost());
   if (start === "backup" && st.initialized && !st.locked) return backupMenu(backupHost());
   if (start === "backup" && st.locked) initialView = start; // after unlock
+  if (start === "web-account") {
+    if (st.initialized && st.locked) initialView = start; // after unlock
+    else return void webAccountScreen();
+  }
   if (!st.initialized) return welcome();
   if (st.locked) return unlockScreen();
   if (!endpoint()) return endpointScreen();
@@ -1102,12 +1108,17 @@ async function mainScreen() {
       return;
     }
     if (v === "__import") return importKeyFlow();
+    if (v === "__web") {
+      (e.target as HTMLSelectElement).value = acct!.address;
+      return platform.openWebWallet?.();
+    }
     await wallet.setActive(v); await refresh();
   } }) as HTMLSelectElement;
   const pickerText = (a: AccountView) => `${a.label} · ${short(a.address)}`;
   for (const a of st.accounts) accountPicker.append(h("option", { value: a.address, ...(a.address === acct.address ? { selected: "true" } : {}) }, pickerText(a)));
   accountPicker.append(h("option", { value: "__add" }, "+ Add account"));
   accountPicker.append(h("option", { value: "__import" }, "+ Import key"));
+  if (platform.openWebWallet) accountPicker.append(h("option", { value: "__web" }, "+ Selfhold web account"));
 
   // The name is changed where it is read: the pencil turns it into a field
   // holding it, Enter or leaving the field keeps the new one, Escape the old.
@@ -2109,6 +2120,48 @@ async function importKeyFlow() {
       h("button", { class: "btn block", onclick: mainScreen }, "Back"),
     ),
   );
+}
+
+/**
+ * The account Selfhold's window handed over, waiting in the worker: added
+ * here under its own name, to this wallet or as a new one, or not. The key
+ * stays in the worker; this page sees only the address.
+ */
+async function webAccountScreen() {
+  const pending = await wallet.webAccountPending();
+  const address = pending.ok ? pending.address : null;
+  const close = () => window.close();
+  if (!address) {
+    render(h("div", { class: "stack" },
+      h("h1", {}, "Nothing to add"),
+      h("p", { class: "muted" }, "Selfhold's window hands its account over for two minutes. Hand it over again from there."),
+      h("button", { class: "block", onclick: close }, "Close"),
+    ));
+    return;
+  }
+  const fields = st.initialized ? null : passwordFields();
+  const err = h("div", { class: "toast" });
+  const add = async () => {
+    const password = fields ? fields.get() : undefined;
+    if (fields && password === null) return;
+    const r = await wallet.webAccountAccept(password ?? undefined);
+    if (!r.ok) { err.textContent = r.error; return; }
+    st = r.state;
+    render(h("div", { class: "stack" },
+      h("h1", {}, "Added"),
+      h("p", { class: "muted" }, "Your Selfhold web account is an account here now, named Selfhold web: the same address, coins and names in both."),
+      h("button", { class: "block", onclick: close }, "Done"),
+    ));
+  };
+  render(h("div", { class: "stack" },
+    h("h1", {}, "Add your Selfhold web account"),
+    h("p", { class: "muted" }, "Selfhold's window (wallet.selfhold.app) handed over the account its passkey keeps. Added here, it is the same account in both: the same address, coins and names."),
+    h("p", { class: "mono" }, address),
+    ...(fields ? [h("p", { class: "muted" }, "First, a password for this extension's wallet."), fields.node] : []),
+    err,
+    h("button", { class: "block", onclick: add }, "Add account"),
+    h("button", { class: "btn block", onclick: async () => { await wallet.webAccountDecline(); close(); } }, "Not now"),
+  ));
 }
 
 /** A typed 64-hex key, or a pasted `lattice key generate` key file. */

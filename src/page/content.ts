@@ -2,6 +2,8 @@
 // answers back. It runs isolated from the page; the worker decides who is
 // asking from the tab Chrome reports, not from anything the page says.
 
+import { HANDOFF_CHANNEL, WEB_WALLET_ORIGIN } from "../lib/web-wallet.ts";
+
 const RELAY_CHANNEL = "lattice-wallet";
 
 window.addEventListener("message", (event) => {
@@ -19,6 +21,21 @@ window.addEventListener("message", (event) => {
     .then(answer)
     .catch((e) => answer({ ok: false, error: String(e?.message ?? e) }));
 });
+
+// On Selfhold's window, and nowhere else: the window says it can hand its
+// account here, and hands it, for the person to add in the extension's own
+// window. The worker checks the page's origin again from what Chrome reports.
+if (window.location.origin === WEB_WALLET_ORIGIN) {
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (event.source !== window || event.origin !== WEB_WALLET_ORIGIN || data?.channel !== HANDOFF_CHANNEL) return;
+    const tell = (body: object) => window.postMessage({ channel: HANDOFF_CHANNEL, ...body }, WEB_WALLET_ORIGIN);
+    if (data.ask === "here") return tell({ here: true });
+    if (typeof data.account !== "string") return;
+    chrome.runtime.sendMessage({ type: "webAccount", privHex: data.account })
+      .then((answer) => tell({ answer }), (e) => tell({ answer: { ok: false, error: String(e?.message ?? e) } }));
+  });
+}
 
 // Only the extension worker can probe this isolated-world listener. A probe
 // addressed to documentId cannot be answered by a replacement page in the tab.

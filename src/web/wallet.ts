@@ -19,6 +19,7 @@ import { el, fmt, fullAddress, label, named, notice, row, site, valueNode, visib
 import { RP_ID, create, forget, saved, signIn, unlock, type Unlocked } from "./account.ts";
 import { CHANNEL, parseCall, type SiteRoute, type WindowCall } from "./protocol.ts";
 import { NeedsCoins, quote, send, type Progress, type Quote, type Route } from "./send.ts";
+import { HANDOFF_CHANNEL } from "../lib/web-wallet.ts";
 import { Stopped, workDevice } from "./sponsor.ts";
 
 type Answer = { ok: boolean; error?: string; [key: string]: unknown };
@@ -385,12 +386,80 @@ function home() {
       status,
     );
   }
+  const toExtension = el("div", {});
   show(
     el("h1", { textContent: "Selfhold" }),
     el("section", { className: "balance-card" }, label("Your account"), el("p", {}, fullAddress(account.address))),
     say("Sites that use Selfhold open this window to ask you. Your passkey approves each write."),
+    toExtension,
     el("button", { className: "text-action", type: "button", textContent: "Forget this account here", onclick: () => { forget(); home(); } }),
   );
+  extensionHere().then((here) => here && toExtension.replaceChildren(addToExtension(account.address)));
+}
+
+// ---------------------------------------------------------------- to Selfhold for Chrome
+
+/**
+ * Asks Selfhold for Chrome's content script, on this page and only here,
+ * whether it is installed and can take this account; it answers within a moment.
+ */
+function extensionHere(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const heard = (event: MessageEvent) => {
+      if (event.source !== window || event.data?.channel !== HANDOFF_CHANNEL || event.data.here !== true) return;
+      done(true);
+    };
+    const done = (here: boolean) => { window.removeEventListener("message", heard); clearTimeout(timer); resolve(here); };
+    const timer = setTimeout(() => done(false), 800);
+    window.addEventListener("message", heard);
+    window.postMessage({ channel: HANDOFF_CHANNEL, ask: "here" }, location.origin);
+  });
+}
+
+/** Hands `hex`, the account's key, to Selfhold for Chrome on this page; its answer. */
+function handOver(hex: string): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    const heard = (event: MessageEvent) => {
+      if (event.source !== window || event.data?.channel !== HANDOFF_CHANNEL || typeof event.data.answer !== "object") return;
+      done(event.data.answer ?? { ok: false });
+    };
+    const done = (answer: { ok: boolean; error?: string }) => { window.removeEventListener("message", heard); clearTimeout(timer); resolve(answer); };
+    const timer = setTimeout(() => done({ ok: false, error: "Selfhold for Chrome didn't answer" }), 10_000);
+    window.addEventListener("message", heard);
+    window.postMessage({ channel: HANDOFF_CHANNEL, account: hex }, location.origin);
+  });
+}
+
+/**
+ * The account, into Selfhold for Chrome too: the passkey gives the key, this
+ * page hands it to the extension, and the extension asks, in its own window,
+ * before adding it. Then it is the same account in both.
+ */
+function addToExtension(address: string) {
+  const status = el("p", { className: "meta", role: "status" });
+  let busy = false;
+  const go = button("Add to Selfhold for Chrome", async () => {
+    if (busy) return;
+    busy = true;
+    status.className = "meta";
+    status.textContent = "";
+    try {
+      const { key } = await unlock(address);
+      const hex = Array.from(key, (b) => b.toString(16).padStart(2, "0")).join("");
+      key.fill(0);
+      const answer = await handOver(hex);
+      if (!answer.ok) throw new Error(answer.error ?? "Selfhold for Chrome didn't take it");
+      status.textContent = "Selfhold for Chrome asks you, in its own window, to add it.";
+    } catch (error) {
+      status.className = "warn";
+      status.textContent = message(error);
+    } finally {
+      busy = false;
+    }
+  });
+  return el("section", {},
+    say("Use this account in Selfhold for Chrome too: the same address, coins and names. Your passkey hands it over, and the extension asks you before adding it."),
+    go, status);
 }
 
 function show(...children: (Node | string)[]) {

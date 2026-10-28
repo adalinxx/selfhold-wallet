@@ -6,6 +6,7 @@ import { startWallet } from "./app.ts";
 import { walletClient } from "../lib/wallet/client.ts";
 import { CHROME_SITE_ACCESS_HELP, HOSTED_NODE_ORIGINS, originPattern } from "../lib/config.ts";
 import { NodePermissionError } from "../lib/wallet/node.ts";
+import { WEB_WALLET_URL } from "../lib/web-wallet.ts";
 
 // The popup opens backup flows in a tab of this same page: a tab may hold the
 // camera, pick files and print; a popup closes on each of those.
@@ -43,6 +44,7 @@ startWallet({
   pairOrigin: location.origin,
   camera: fullPage,
   writeRequests: true,
-  initialView: view === "backup" || view === "restore" ? view : undefined,
+  initialView: view === "backup" || view === "restore" || view === "web-account" ? view : undefined,
+  openWebWallet: () => { chrome.tabs.create({ url: `${WEB_WALLET_URL}#to-extension` }); window.close(); },
   openFullPage: (v) => { chrome.tabs.create({ url: chrome.runtime.getURL(`popup/index.html?view=${v}`) }); window.close(); },
 });
