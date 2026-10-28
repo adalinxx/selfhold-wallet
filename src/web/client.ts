@@ -150,9 +150,9 @@ export function selfhold(options: Options = {}) {
       remember(answer.address);
       return { transactionCID: answer.transactionCID as string };
     },
-    /** Sign `text`, once the person approves. The signed bytes are "lattice-message:" + this origin + "\n" + text. */
+    /** Sign `text`, once the person approves, as the address given here if any. The signed bytes are "lattice-message:" + this origin + "\n" + text. */
     signMessage: async (params: { text: string }) => {
-      const { publicKey, signature } = answered(await ask({ method: "signMessage", params }));
+      const { publicKey, signature } = answered(await ask({ method: "signMessage", params }, undefined, false, given() ?? undefined));
       return { publicKey: publicKey as string, signature: signature as string };
     },
   });
