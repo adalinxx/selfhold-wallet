@@ -11,5 +11,5 @@
     "types": ["chrome", "node"],
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["src", "test", "build.mjs"]
+  "include": ["src", "test", "build.mjs", "build-web.mjs"]
 }

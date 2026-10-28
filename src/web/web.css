@@ -1,0 +1,10 @@
+/* The web wallet's own: the working screen while a fee is paid in work. */
+.work-bar { height: var(--s-2); border: var(--rule); border-color: var(--ink); }
+.work-bar > span { display: block; height: 100%; width: 0; background: var(--ink); transition: width 0.4s ease-out; }
+@media (prefers-reduced-motion: reduce) { .work-bar > span { transition: none; } }
+.work-left { font-size: var(--fs-14); font-variant-numeric: tabular-nums; }
+.work-steps { margin: 0; padding-left: var(--s-4); }
+.work-steps li { color: color-mix(in srgb, var(--ink) 45%, var(--paper)); }
+.work-steps li.done { color: var(--ink); }
+.work-steps li.now { color: var(--ink); font-weight: 600; }
+.work-steps li.done::after { content: " ✓"; }
