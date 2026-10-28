@@ -8,7 +8,7 @@ test("background accepts only its own wallet page and passive reads do not exten
   const prefix = "chrome-extension://disposable-test-id/";
   Object.defineProperty(globalThis, "chrome", { configurable: true, value: {
     runtime: { id: "disposable-test-id", getURL: (path: string) => prefix + path,
-      onMessage: { addListener: (fn: typeof listener) => { listener = fn; } } },
+      onMessage: { addListener: (fn: typeof listener) => { listener = fn; } }, onMessageExternal: { addListener: () => {} } },
     storage: { local: { get: async () => ({}), set: async () => {}, remove: async () => {} } },
     alarms: { create: () => { alarms += 1; }, onAlarm: { addListener: () => {} } },
     windows: { onRemoved: { addListener: () => {} } },

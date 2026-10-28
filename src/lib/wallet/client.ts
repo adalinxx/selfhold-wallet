@@ -19,6 +19,12 @@ export function walletClient(send: Send) {
     addAccount: (label?: string) => call<WithState>({ type: "addAccount", label }),
     importKey: (privHex: string, label?: string) => call<WithState>({ type: "importKey", privHex, label }),
     setActive: (address: string) => call<WithState>({ type: "setActive", address }),
+    /** The address of the account Selfhold's window handed over, if one is waiting; never its key. */
+    webAccountPending: () => call<{ address: string | null }>({ type: "webAccountPending" }),
+    /** Adds it, `address`, the one the person was shown: to this wallet, or as a new one under `password`. */
+    webAccountAccept: (address: string, password?: string) => call<WithState>({ type: "webAccountAccept", address, password }),
+    /** Forgets it. */
+    webAccountDecline: () => call({ type: "webAccountDecline" }),
     /** Name an account; an empty name gives it back its default. */
     renameAccount: (address: string, label: string) => call<WithState>({ type: "renameAccount", address, label }),
     /** Pair (or, with null, unpair) a node: keep its operator cookie in the vault. */

@@ -2,6 +2,9 @@
 
 Selfhold is the wallet for Lattice, previously named Lattice Wallet. Existing installations update through the same Chrome Web Store item.
 
+The wallet pages at [lattice.build/docs](https://lattice.build/docs/use/) (node trust, network binding,
+backup formats, privacy policy) are published from `docs/` here; edit them here.
+
 See [network binding and replay](docs/network-binding.md) before reusing keys on separate networks.
 
 Release materials: [release procedure](docs/release.md), [privacy policy](docs/privacy-policy.md), [store listing](docs/store-listing.md), and [verification evidence](docs/release-verification.md). Report vulnerabilities through [SECURITY.md](SECURITY.md).
@@ -70,16 +73,38 @@ Reads go through the SDK's `NodeClient` (`/api/state/account`,
 
 ### Fees
 
-The fee is yours: there is no fee field and no estimate service. It is the
-debit-over-credit excess the miner collects (the SDK's `buildTransfer`).
+The fee is the debit-over-credit excess the miner collects (the SDK's
+`buildTransfer`). The wallet prices it from the node it sends through; there
+is no outside estimate service.
 
-- Every send has an editable fee field, prefilled with the chain's default.
-- Each chain's default fee is set under **Fee** (1 unit until you change it).
-- The chosen endpoint reports its own relay floor (`minRelayFee` in
-  `/api/chain/info`, its operator's policy, never consensus). A fee below it
-  is **warned about, not raised**: the send goes as you set it, and the node
-  may refuse it (`belowMinRelayFee`).
-- The review screen shows the fee, the total, and the node's minimum.
+- **Automatic** (each chain's default): the node's relay floor (`minRelayFee`
+  in `/api/chain/info`, its operator's policy, never consensus) while the next
+  block has room. When the node's pool projects full blocks (`GET /api/fees`),
+  the fee that ranks this transaction into the next one: a rate above that
+  block's lowest, for the transaction's exact size (the SDK's
+  `signedTransactionSize` and `feeToOutbid`). A node without `/api/fees`
+  prices at its floor.
+- **Fixed**: under **Settings → Network fee**, one fee for every transaction
+  on the chain, whatever blocks hold.
+- The send screen states the fee in one line: what it buys (the next block
+  has room; or, when blocks are full, the next block, within three, or many
+  blocks), and the chain's target block time from `/api/chain/spec`. While
+  blocks are full it offers **Next block**, **In 3 blocks** and **Minimum**.
+  Any fee can be typed under **Custom fee**, which also shows the node's floor.
+- A fee below the floor is **warned about, not raised**: the transaction goes
+  as set, and the node may refuse it (`belowMinRelayFee`). A fee you typed or
+  picked is never changed by the wallet.
+- The review screen shows the fee, the total and the node's minimum. It warns
+  when the fee is at least half the amount, and when blocks are full and the
+  fee is below what the next block needs.
+- Website requests that name no fee pay the chain's fixed fee, else the
+  automatic fee of the node the account is read from, drawn again once that
+  node answers, so what is signed is what was shown.
+- **Increase fee** on a pending send starts at the most of: a quarter above
+  the previous fee (at least 1 more), the node's floor, and what the next
+  block needs. Miners rank by fee per byte and a replacement is the same size,
+  so 1 more on a large fee rarely moves it up. When the next block has room,
+  the screen says a higher fee is not needed.
 
 ### Status
 
@@ -253,6 +278,67 @@ const { transactionCID } = await lattice.openRequest(uri);
   gave it stays. The wallet never looks handles up: asking one node about
   every account would link them.
 
+## Selfhold on the web: `wallet.selfhold.app`
+
+For people without the extension, Selfhold also runs as a web page at
+`wallet.selfhold.app`. A site opens it in a window over its page, as a
+payment window opens, and gets back only what the person approved. The
+account's key comes from a passkey (WebAuthn's PRF extension). The passkey
+belongs to `wallet.selfhold.app`, so it makes the same account on every site
+that uses Selfhold, whatever the site's domain, and no other page, on
+selfhold.app or anywhere, can ask it for the key. The window asks the passkey
+again for every approval, holds the key only while it signs, and refuses to
+run inside a frame or on any other host.
+
+A site loads `selfhold.js` (built into `dist-web/`) and makes the same calls
+as `window.lattice`, each from a click:
+
+```js
+import { selfhold } from "./selfhold.js";
+const wallet = selfhold({ hosts: () => [node], sponsor: () => sponsorURL });
+const address = await wallet.connect();
+const { transactionCID } = await wallet.writeRecords({ chainPath, actions, payments }, { progress: (text) => {} });
+const { publicKey, signature } = await wallet.signMessage({ text });
+```
+
+A write can be passed as a promise, so the window opens on the click and
+waits while the site reads what to write. The site's page must keep its
+opener: `Cross-Origin-Opener-Policy: same-origin` cuts the window off, and
+`same-origin-allow-popups` keeps it.
+
+A site may suggest hosts for the chain and a fee sponsor; both are shown in
+the window's Details. With a sponsor, the fee is paid with work done on the
+person's device: the graphics chip through WebGPU, else the processor. The
+sponsor adds only its fee debit, and, when the account is short of a write's
+payments, a credit to it; the window checks that before signing
+(`src/web/sponsor.ts`). Without enough coins and no sponsor's help, the write
+is refused as `NeedsCoins`. A write or a signature goes with the address the
+site was given: if the window's account is another now, the window signs
+nothing, and the site forgets the address, to connect again. With no account
+in this browser yet, the window then offers only to find that one with its
+passkey: a new account could only be refused.
+
+**One account in both.** Each Selfhold keeps its own accounts, so the
+window's account can be added to Selfhold for Chrome: the extension's account
+menu has "+ Selfhold web account", which opens the window, and the window's
+home has "Add to Selfhold for Chrome" when the extension answers there. The
+passkey gives the key, and the window hands it to the extension by Chrome's
+own messaging (`externally_connectable`, `wallet.selfhold.app` only), which
+reaches that extension alone and which no other script or extension on the
+page can read. The worker takes it only from that origin, as Chrome reports
+it; holds one account at a time, for two minutes, in session memory; and
+opens its own window, which shows the address and adds that account, and no
+other, when the person says so: as an account named "Selfhold web", or, with
+no wallet yet, as a new wallet under a new password. Closing it, or Not now,
+forgets it. Whoever controls `wallet.selfhold.app` could hand the extension
+an account of their own: the extension's window says which account it adds,
+to compare with the window's, and adds nothing unasked.
+
+It is the easier Selfhold, not the safer one: see the next section. Whoever
+controls `wallet.selfhold.app`'s code (its host, its DNS, this repository's
+deploys) could serve a page that asks the passkey for the key. The
+extension's frozen, reviewed bundle has no such single point.
+
 ## Why an extension (not a web page)
 
 A static web wallet re-fetches its code on every load, so a host/DNS/supply-chain
@@ -263,8 +349,8 @@ until a signed update**, and isolates the signer from any web page.
 ## Trustless transactions
 
 The wallet **builds, encodes and signs the transaction locally** with the
-[Lattice SDK](https://github.com/adalinxx/lattice-sdk)
-(`@adalinxx/lattice-core`): canonical DAG-CBOR, the `bodyCID`, the
+[Lattice SDK](https://github.com/0xLattice/lattice-sdk)
+(`@adalin/lattice-core`): canonical DAG-CBOR, the `bodyCID`, the
 `lattice-tx-v1` signing envelope, Ed25519 — it never trusts the node for *what
 it signs*. Signing runs only in the background worker. The SDK path is checked
 **bit-for-bit** against Lattice's published conformance vectors
@@ -276,7 +362,7 @@ CIDs, the envelope, and RFC 8032 signatures, with the negative cases rejected.
 
 The SDK is not published to npm. It is a **git submodule pinned to an exact
 commit** (`vendor/lattice-sdk`), and its packages are `file:` dependencies
-(`@adalinxx/lattice-core`, `-client`, `-relay`, `-volumes`). `npm ci` runs the
+(`@adalin/lattice-core`, `-client`, `-relay`, `-volumes`). `npm ci` runs the
 `prepare` script, which installs the SDK from its own lockfile and builds it
 (`npm run sdk` does the same by hand, e.g. after `npm ci --ignore-scripts`).
 esbuild then inlines it into the extension bundle: no remote code.
@@ -288,7 +374,7 @@ submodule change.
 ## Design
 
 UI follows the Lattice design system
-([adalinxx/lattice-design](https://github.com/adalinxx/lattice-design)):
+([0xLattice/lattice-design](https://github.com/0xLattice/lattice-design)):
 monochrome, monospace, hairlines only, zero accent. Tokens are vendored in
 `public/assets/tokens.css`.
 
@@ -371,6 +457,7 @@ npm ci                 # pinned deps; `prepare` builds the SDK
 npm run typecheck
 npm test               # conformance, derivation freeze, wallet logic (must pass)
 npm run build          # -> dist/
+npm run build:web      # -> dist-web/: wallet.selfhold.app, and selfhold.js
 ```
 
 Then load `dist/` as an unpacked extension: `chrome://extensions` → Developer

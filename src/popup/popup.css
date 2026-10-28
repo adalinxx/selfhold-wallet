@@ -1,5 +1,5 @@
-/* Popup scaffolding over the Lattice design system (tokens.css): monochrome,
-   monospace, hairlines, radius 0, zero accent. Nothing here adds color. */
+/* Popup scaffolding over Selfhold's tokens (tokens.css): monochrome, the
+   system sans, hairlines, radius 0, zero accent. Nothing here adds color. */
 
 body { width: 360px; }
 
@@ -8,6 +8,9 @@ body { width: 360px; }
   padding: var(--s-2) var(--s-3); border-bottom: var(--rule);
 }
 .brand { display: flex; align-items: center; gap: var(--s-2); padding: 2px var(--s-2) 2px 0; border: 0; background: transparent; cursor: pointer; font-size: var(--fs-12); }
+/* Until the wallet is open, the mark alone (app.ts showHeaderControls). */
+.brand-mark { display: flex; align-items: center; padding: 2px var(--s-2) 2px 0; }
+.bar [hidden] { display: none; }
 .brand:hover .brand-label, .brand:focus-visible .brand-label { text-decoration: underline; text-underline-offset: 2px; }
 
 .net {
@@ -30,6 +33,16 @@ h1 { font-size: var(--fs-20); margin: 0 0 var(--s-3); }
 
 .hero { padding: var(--s-5) 0 var(--s-4); text-align: center; }
 .hero .wordmark { font-size: var(--fs-28); display: block; }
+/* The mark above the wordmark, a quarter of its size clear below it (docs/brand/guidebook.md §3). */
+.hero .mark { display: block; margin: 0 auto var(--s-4); }
+/* Unlock: the same lockup smaller, mark 56 over the wordmark at 20. */
+.hero.gate .mark { margin-bottom: var(--s-3); }
+.hero.gate .wordmark { font-size: var(--fs-20); margin: 0; }
+/* A milestone: the mark revealed once, never looped (docs/brand/guidebook.md §8). */
+.hero.milestone .wordmark { font-size: var(--fs-20); margin: 0; }
+.hero.milestone .mark { animation: reveal 500ms ease-out both; }
+@keyframes reveal { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .hero.milestone .mark { animation: none; } }
 
 button.block, .btn.block { display: block; width: 100%; text-align: center; }
 /* One filled button a screen: the step that moves it forward. Every other
@@ -70,7 +83,7 @@ label.k { display: block; margin-bottom: var(--s-1); font-size: var(--fs-12); te
   display: inline-grid; flex: 0 0 32px; width: 32px; height: 32px;
   place-items: center; padding: 0;
 }
-.action-icon { display: block; width: 16px; height: 16px; }
+.icon { display: block; flex: none; }
 .transaction-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--s-2); }
 .transaction-heading h1 { margin: 0; }
 .transaction-list { border: var(--rule); }
@@ -83,7 +96,10 @@ label.k { display: block; margin-bottom: var(--s-1); font-size: var(--fs-12); te
 .transaction-summary { flex: 1; min-width: 0; }
 .transaction-line { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-2); }
 .transaction-line + .transaction-line { margin-top: var(--s-1); }
-.transaction-title { font-size: var(--fs-14); }
+.transaction-title { font-size: var(--fs-14); display: inline-flex; align-items: center; gap: var(--s-2); }
+/* A fixed slot, so titles line up whether or not a state has a shape. */
+.transaction-glyph { display: inline-flex; width: 16px; height: 16px; flex: none; }
+.transaction-item.replaced .transaction-amount { text-decoration: line-through; }
 .transaction-amount { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; min-width: 0; text-align: right; }
 .transaction-context { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .transaction-status { text-align: right; max-width: 60%; overflow-wrap: anywhere; }
@@ -93,7 +109,11 @@ label.k { display: block; margin-bottom: var(--s-1); font-size: var(--fs-12); te
 .transaction-details .row-actions { flex-wrap: wrap; align-items: center; }
 .transaction-details .row-actions .icon-action { flex: 0 0 32px; }
 .transaction-payload { margin: 0; padding: var(--s-3); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-12); max-height: 260px; overflow: auto; }
+/* Empty: a 32 px glyph, a title and one line (docs/brand/guidebook.md §7). */
 .transaction-empty { border: var(--rule); padding: var(--s-4) var(--s-3); }
+.transaction-empty .icon { margin-bottom: var(--s-3); }
+.transaction-empty .section-label { margin: 0 0 var(--s-1); }
+.transaction-empty p { margin: 0; }
 .transaction-heading ~ .toast:empty { display: none; }
 .balance-value .unread { font-size: var(--fs-16); line-height: var(--lh-body); }
 .notices:empty { display: none; }
@@ -208,3 +228,16 @@ h2.section-label { margin-top: var(--s-4); padding-top: var(--s-3); border-top: 
 /* A row of home actions with one button in it: the button takes the row. */
 .primary-actions > :only-child { grid-column: 1 / -1; }
 .account-name-field { width: 100%; min-width: 0; padding: 2px var(--s-1); font: inherit; }
+/* A warning box holds nothing until there is a warning. */
+.warn:empty { display: none; }
+/* Fee speeds, shown only while blocks are full: one press each. */
+.fee-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); }
+.fee-choices:empty { display: none; }
+.fee-choices .btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--s-2) var(--s-1); text-transform: none; letter-spacing: 0; }
+.fee-choices .btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.fee-choice-label { font-size: var(--fs-12); }
+.fee-choice-value { font-size: var(--fs-14); font-variant-numeric: tabular-nums; }
+.fee-mode { align-items: flex-start; }
+.fee-mode input { margin-top: 3px; }
+.fee-mode-text { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-14); }
+.transaction-details .mono { overflow-wrap: anywhere; }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Selfhold",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Open-source, self-custodial wallet for Lattice. Your keys. Your control.",
   "action": {
     "default_title": "Selfhold",
@@ -67,5 +67,10 @@
       ],
       "run_at": "document_start"
     }
-  ]
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://wallet.selfhold.app/*"
+    ]
+  }
 }

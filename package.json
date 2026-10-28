@@ -1,6 +1,6 @@
 {
   "name": "lattice-wallet",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "description": "Selfhold — open-source, self-custodial wallet for Lattice",
@@ -11,16 +11,18 @@
     "test": "node --test test/*.ts",
     "conformance": "node test/conformance.ts",
     "build": "node build.mjs",
+    "build:web": "node build-web.mjs",
     "package": "node scripts/package.mjs",
     "watch": "node build.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "icons": "node scripts/render-selfhold-icons.mjs"
+    "icons": "node scripts/render-selfhold-icons.mjs",
+    "specimens": "node scripts/render-brand-specimens.mjs"
   },
   "dependencies": {
-    "@adalinxx/lattice-client": "file:vendor/lattice-sdk/packages/client",
-    "@adalinxx/lattice-core": "file:vendor/lattice-sdk/packages/core",
-    "@adalinxx/lattice-relay": "file:vendor/lattice-sdk/packages/relay",
-    "@adalinxx/lattice-volumes": "file:vendor/lattice-sdk/packages/volumes",
+    "@adalin/lattice-client": "file:vendor/lattice-sdk/packages/client",
+    "@adalin/lattice-core": "file:vendor/lattice-sdk/packages/core",
+    "@adalin/lattice-relay": "file:vendor/lattice-sdk/packages/relay",
+    "@adalin/lattice-volumes": "file:vendor/lattice-sdk/packages/volumes",
     "@noble/curves": "2.2.0",
     "@noble/hashes": "^2.2.0",
     "@scure/bip39": "^2.2.0",

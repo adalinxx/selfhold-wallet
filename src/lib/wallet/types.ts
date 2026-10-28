@@ -1,7 +1,7 @@
 // Shared types for the popup <-> background-signer protocol. Note: AccountView
 // and every message intentionally carry NO private key material.
 
-import type { TransactionPayload } from "@adalinxx/lattice-core";
+import type { TransactionPayload } from "@adalin/lattice-core";
 
 /** Persisted, encrypted-at-rest wallet contents (the vault plaintext). */
 export interface WalletData {
@@ -56,6 +56,10 @@ export type Request =
   | { type: "lock" }
   | { type: "addAccount"; label?: string }
   | { type: "importKey"; privHex: string; label?: string }
+  // ---- an account Selfhold's window handed over (background/web-account.ts) ----
+  | { type: "webAccountPending" }
+  | { type: "webAccountAccept"; address: string; password?: string }
+  | { type: "webAccountDecline" }
   | { type: "setActive"; address: string }
   | { type: "renameAccount"; address: string; label: string } // "" restores the default name
   | { type: "reset" }

@@ -45,6 +45,8 @@ async function open(call: unknown, balance: string, layout?: (dom: JSDOM) => voi
     const url = new URL(String(input));
     if (env.fetch) return env.fetch(url) ?? new Response("{}", { status: 404 });
     if (url.pathname === `/api/state/account/${me}`) return new Response(JSON.stringify({ owner: me, balance, nonce: "7" }), { status: 200 });
+    // A node that reports no relay floor: it admits any fee.
+    if (url.pathname === "/api/chain/info") return new Response(JSON.stringify({ chain: url.searchParams.get("chainPath")!.split("/") }), { status: 200 });
     return new Response("{}", { status: 404 });
   } });
   dom.window.close = () => { sent.push({ type: "closed" }); };
@@ -81,6 +83,7 @@ test("a payment leads with the total, its parts, and the balance after; addresse
   assert.deepEqual(all(dom, ".breakdown .amount"), ["250", "1"], "the parts, adding up to the total");
   assert.ok(summary.includes("in record own/a/berlin/A12"), "the payee is the address in the record the write changes");
   assert.equal(dom.window.document.querySelector(".summary .notice"), null, "no warning for a payee a record names");
+  assert.equal(dom.window.document.querySelector(".decision.danger"), null, "nor a turned-round decision");
   assert.equal(one(dom, ".records:not(.raw) li .meta"), "payee@250 → you");
   assert.deepEqual(all(dom, ".records:not(.raw) .name"), ["payee", "you"]);
   const details = one(dom, "details.advanced");
@@ -104,12 +107,53 @@ test("an opened request is signed as the account chosen here, and its label is s
   assert.equal(one(dom, ".from"), "from fanfare.example · it calls itself “Buy @rae”");
   assert.equal((dom.window.document.querySelector("select.picker") as HTMLSelectElement).value, me, "the account the site is connected to, first");
   assert.equal(one(dom, ".records:not(.raw) li .meta"), "payee@250 → you", "{account} filled in as the account chosen");
-  assert.ok(one(dom, ".summary").includes("Balance: 1,000 → 749"));
-  assert.equal(approveButton(dom).textContent, "Pay 251");
+  assert.ok(one(dom, ".summary").includes("Balance: 1,000 → 750"));
+  assert.equal(approveButton(dom).textContent, "Pay 250");
   approveButton(dom).click();
   await settle();
   const decided = sent.find((m) => m.type === "decide");
-  assert.deepEqual({ address: decided?.address, present: decided?.present, fee: decided?.fee, nonce: decided?.nonce }, { address: me, present: [], fee: "1", nonce: "7" });
+  assert.deepEqual({ address: decided?.address, present: decided?.present, fee: decided?.fee, nonce: decided?.nonce }, { address: me, present: [], fee: "0", nonce: "7" });
+});
+
+test("a request that names no fee pays the automatic fee of the node the account is read from, shown before signing", async () => {
+  const withFloor = (floor: string) => (url: URL) => url.pathname === `/api/state/account/${me}`
+    ? new Response(JSON.stringify({ owner: me, balance: "1000", nonce: "7" }), { status: 200 })
+    : url.pathname === "/api/chain/info" ? new Response(JSON.stringify({ chain: ["Nexus", "fanfare", "band"], minRelayFee: floor }), { status: 200 })
+    : undefined;
+  const intent = {
+    version: 1, chainPath: ["Nexus", "fanfare", "band"], expiresAt: "2030-01-01T00:00:00Z",
+    actions: [{ key: "name/rae", oldValue: `${holder}@250`, newValue: "{account}" }], payments: [{ to: holder, amount: "250" }],
+  };
+  const opened = await open({ method: "openRequest", params: intent }, "1000", undefined, { fetch: withFloor("2") });
+  assert.equal(approveButton(opened.dom).textContent, "Pay 252", "drawn again at the node's floor");
+  assert.ok(one(opened.dom, ".summary").includes("Balance: 1,000 → 748"));
+  approveButton(opened.dom).click();
+  await settle();
+  assert.equal(opened.sent.find((m) => m.type === "decide")?.fee, "2", "signed as shown");
+
+  const { fee: _, ...noFee } = buy.params;
+  const written = await open({ method: "writeRecords", params: noFee }, "1000", undefined, { fetch: withFloor("3") });
+  assert.equal(approveButton(written.dom).textContent, "Pay 253");
+  approveButton(written.dom).click();
+  await settle();
+  assert.equal(written.sent.find((m) => m.type === "decide")?.fee, "3");
+
+  const fixed = await open({ method: "writeRecords", params: noFee }, "1000", undefined, {
+    fetch: withFloor("3"),
+    settings: { endpoints: { "Nexus/fanfare/band": { url: NODE, acceptsSubmit: true, source: "user" } }, nodeMode: "custom", fees: { "Nexus/fanfare/band": "5" } },
+  });
+  assert.equal(approveButton(fixed.dom).textContent, "Pay 255", "a fixed fee is the person's, not the node's");
+});
+
+test("an automatic fee the node will not tell is never signed at a guess", async () => {
+  const { dom, sent } = await open({ method: "writeRecords", params: { ...buy.params, fee: undefined } }, "1000", undefined, {
+    fetch: (url) => url.pathname === `/api/state/account/${me}` ? new Response(JSON.stringify({ owner: me, balance: "1000", nonce: "7" }), { status: 200 }) : undefined,
+  });
+  assert.match(one(dom, "#decision-status"), /Could not read the network fee from node\.example\. Try again, or set a fixed fee for Nexus\/fanfare\/band in the wallet\./);
+  assert.equal(approveButton(dom).disabled, true);
+  approveButton(dom).click();
+  await settle();
+  assert.equal(sent.find((m) => m.type === "decide"), undefined);
 });
 
 test("an opened request's proposed fee is the one shown and signed", async () => {
@@ -135,6 +179,8 @@ test("a payee no record names is shown whole, grouped, with a warning next to it
   const row = one(dom, ".breakdown .to");
   assert.ok(row.includes("an address the page chose"));
   assert.ok(row.includes("Check every group of it before you pay."));
+  assert.ok(dom.window.document.querySelector(".breakdown .notice.danger"), "an address only the page vouches for is a danger");
+  assert.ok(dom.window.document.querySelector(".decision.danger"), "and declining becomes the filled choice");
   assert.equal(all(dom, ".breakdown .groups").join(""), stranger, "the whole address, in groups of four");
 });
 
@@ -173,7 +219,9 @@ test("a message is shown in full, line by line, with hidden characters made visi
 
 test("a message naming another site says so", async () => {
   const { dom } = await open({ method: "signMessage", params: { text: "bank.example wants you to sign in with your account:\nURI: https://bank.example/login" } }, "0");
-  assert.equal(one(dom, ".notice"), "This message names bank.example, but fanfare.example is asking. Sign only if you expect that.");
+  assert.equal(one(dom, ".notice.warning .notice-text"), "This message names bank.example, but fanfare.example is asking. Sign only if you expect that.");
+  assert.equal(one(dom, ".notice.warning .tier"), "Warning");
+  assert.equal(dom.window.document.querySelector(".decision.danger"), null, "a warning leaves the decision as it is");
 });
 
 test("payments no record names come first, numbered as shown", async () => {
@@ -342,4 +390,48 @@ test("a new account the wallet cannot add says why, and the choice goes back", a
   assert.equal(picker.value, me);
   assert.equal(one(dom, ".warn"), "Locked or no recovery phrase");
   assert.equal(sent.filter((m) => m.type === "decide").length, 0, "nothing connected");
+});
+
+test("a page's omitted fee uses the reviewed chain default, even if settings change before the answer", async () => {
+  const { fee: _, ...params } = buy.params;
+  const settings = { endpoints: { "Nexus/fanfare/band": { url: NODE, acceptsSubmit: true, source: "user" } }, nodeMode: "custom", fees: { "Nexus/fanfare/band": "7" } };
+  const { sent, dom } = await open({ method: "writeRecords", params }, "1000", undefined, { settings });
+  assert.equal(approveButton(dom).textContent, "Pay 257");
+  settings.fees["Nexus/fanfare/band"] = "9";
+  approveButton(dom).click(); await settle();
+  assert.equal(sent.find((m) => m.type === "decide")?.fee, "7", "answer carries the fee actually reviewed");
+});
+
+test("an explicit zero page fee is not replaced by the saved default", async () => {
+  const settings = { endpoints: { "Nexus/fanfare/band": { url: NODE, acceptsSubmit: true, source: "user" } }, nodeMode: "custom", fees: { "Nexus/fanfare/band": "7" } };
+  const { sent, dom } = await open({ ...buy, params: { ...buy.params, fee: "0" } }, "1000", undefined, { settings });
+  assert.equal(approveButton(dom).textContent, "Pay 250");
+  approveButton(dom).click(); await settle();
+  assert.equal(sent.find((m) => m.type === "decide")?.fee, "0");
+});
+
+test("a write while one the node still holds is pending waits for it; one the node dropped frees the nonce", async () => {
+  const settings = {
+    endpoints: { "Nexus/fanfare/band": { url: NODE, acceptsSubmit: true, source: "user" } }, nodeMode: "custom",
+    pendingSubmissions: [{ cid: "bafypending", chain: "Nexus/fanfare/band", from: me, to: holder, amount: "1", fee: "1", nonce: "7", at: 0 }],
+  };
+  const node = (holds: boolean) => (url: URL) => {
+    if (url.pathname === `/api/state/account/${me}`) return new Response(JSON.stringify({ owner: me, balance: "1000", nonce: "7" }), { status: 200 });
+    if (url.pathname === "/api/chain/info") return new Response(JSON.stringify({ chain: ["Nexus", "fanfare", "band"] }), { status: 200 });
+    if (url.pathname === "/api/transaction/bafypending") {
+      return holds
+        ? new Response(JSON.stringify({ txCID: "bafypending", nonce: "7", signers: [me], chainPath: ["Nexus", "fanfare", "band"],
+          accountActions: [], depositActions: [], receiptActions: [], withdrawalActions: [] }), { status: 200 })
+        : new Response(JSON.stringify({ error: { message: "Not Found" } }), { status: 404 });
+    }
+    return undefined;
+  };
+  const held = await open(buy, "1000", undefined, { settings, fetch: node(true) });
+  assert.ok(held.text().includes("still pending on Nexus/fanfare/band"), held.text());
+  assert.ok(approveButton(held.dom)?.disabled ?? true, "nothing to sign at a nonce no node pools");
+
+  const dropped = await open(buy, "1000", undefined, { settings, fetch: node(false) });
+  assert.ok(!dropped.text().includes("still pending"), dropped.text());
+  assert.ok(dropped.text().includes("7 · account read from node.example"), `signed at the chain's nonce: ${dropped.text()}`);
+  assert.equal(approveButton(dropped.dom)?.disabled, false);
 });

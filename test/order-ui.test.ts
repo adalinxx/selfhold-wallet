@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import type { WalletClient } from "../src/lib/wallet/client.ts";
 import { DEFAULT_SETTINGS, type Settings } from "../src/lib/wallet/settings.ts";
-import { cidV1DagCbor, encodeDagCbor, type DagCborValue } from "@adalinxx/lattice-core";
+import { cidV1DagCbor, encodeDagCbor, type DagCborValue } from "@adalin/lattice-core";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ensureOrigins } from "../src/popup/app.ts";
 import { activeDeposits, receiptWithdrawer, depositValues } from "../src/lib/wallet/node.ts";
@@ -248,9 +248,9 @@ test("sell-order UI refuses a stale review and never re-signs after an uncertain
 
   for (const label of ["Refresh balance", "Copy account address", "Send", "Receive"]) button(label);
   assert.equal(button("Refresh balance").textContent, "", "refresh is an icon-only action");
-  assert.ok(button("Refresh balance").querySelector("svg.action-icon"));
+  assert.ok(button("Refresh balance").querySelector("svg.icon"));
   assert.equal(button("Copy account address").textContent, "", "copy is an icon-only action");
-  assert.ok(button("Copy account address").querySelector("svg.action-icon"));
+  assert.ok(button("Copy account address").querySelector("svg.icon"));
   for (const hidden of ["Scan cross-chain order", "Transactions", "Settings", "Node", "Fee", "Backup", "Lock"]) {
     assert.equal([...document.querySelectorAll("#view button")].some((item) => item.textContent === hidden), false, `${hidden} stays off the home screen`);
   }
@@ -297,7 +297,18 @@ test("sell-order UI refuses a stale review and never re-signs after an uncertain
 
   button("Send").click();
   await settle();
-  assert.equal((document.querySelector('details.advanced input') as HTMLInputElement).value, "1", "an asynchronous node response never overwrites the user's fee field");
+  const sendFee = document.querySelector('details.advanced input[aria-label="Network fee"]') as HTMLInputElement;
+  assert.equal(sendFee.value, "3", "automatic: the node's floor");
+  assert.equal((document.querySelector("details.advanced") as HTMLDetailsElement).open, false, "a fee at the floor needs no field");
+  button("Cancel").click();
+  await settle();
+  button("Send").click();
+  // Typed before the node answers: the answer never overwrites it.
+  const typedFee = document.querySelector('details.advanced input[aria-label="Network fee"]') as HTMLInputElement;
+  typedFee.value = "1";
+  typedFee.dispatchEvent(new dom.window.Event("input"));
+  await settle();
+  assert.equal(typedFee.value, "1", "an asynchronous node response never overwrites the user's fee field");
   assert.equal((document.querySelector("details.advanced") as HTMLDetailsElement).open, true, "a below-floor fee opens the warning without clamping the value");
   (document.querySelector('input[placeholder^="recipient"]') as HTMLInputElement).value = importPrivateKey("b0".repeat(32)).address;
   (document.querySelector('input[placeholder^="amount"]') as HTMLInputElement).value = "10";
@@ -363,7 +374,7 @@ test("sell-order UI refuses a stale review and never re-signs after an uncertain
   assert.match(chainBadge?.title ?? "", /Nexus\/testnet\/payments/);
   (document.getElementById("settings-button") as HTMLButtonElement).click();
   assert.equal(document.querySelector("h1")?.textContent, "Settings");
-  button("Default fee");
+  button("Network fee");
 });
 
 test("a market buy discovers deposits, pays the parent receipt, and withdraws on the child", async () => {

@@ -4,22 +4,24 @@
 // Lattice design system. The host supplies a Platform: signer, settings
 // store, network permission, and optionally its own node.
 
-import type { Fetch } from "@adalinxx/lattice-client";
-import { nodeCookieAuthorization } from "@adalinxx/lattice-core";
+import type { Fetch } from "@adalin/lattice-client";
+import { nodeCookieAuthorization, type TransactionBody } from "@adalin/lattice-core";
 import type { WalletClient } from "../lib/wallet/client.ts";
 import { newMnemonic, isValidMnemonic, keyFilePrivateKey } from "../lib/crypto/accounts.ts";
-import { reader, submitter, submitChecked, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, declaredHosts, spread, describe, feeWarning, sentStatus, statusText, activeDeposits, depositValues, receiptWithdrawer, type ActiveDeposit, OPERATOR_DECLARED } from "../lib/wallet/node.ts";
+import { reader, submitter, submitChecked, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, declaredHosts, spread, describe, feeWarning, highFeeWarning, nextReplacementFee, replacementFee, readFeeMarket, feeChoice, automaticFee, transferBody, weigh, estimatedWeight, blockCadence, type FeeMarket, type FeeChoice, sentStatus, statusText, activeDeposits, depositValues, receiptWithdrawer, type ActiveDeposit, OPERATOR_DECLARED } from "../lib/wallet/node.ts";
 import { ALL_HTTPS_ORIGINS, HOSTED_NODE_ORIGINS, LATTICE_BUILD_RPC, LATTICE_EXPLORER_RPC, LATTICE_TESTNET_RPC, ROOT_CHAIN, parseChainPath, normalizeNodeURL, originPattern, isLoopbackNodeURL } from "../lib/config.ts";
 import { discoveryStarts } from "../lib/wallet/nonce.ts";
-import { loadSettings, saveSettings, recordOpenDeposit, completeOpenDeposit, recordOpenPurchase, archiveOpenPurchase, recordWithdrawalAttempt, purchaseWithdrawalAttempts, recordSent, recordPendingSubmission, archivePendingSubmission, defaultFee, parseFee, type Settings, type ChosenEndpoint, type KeyValueStore, type OpenPurchase, type SentTransaction } from "../lib/wallet/settings.ts";
+import { loadSettings, saveSettings, recordOpenDeposit, completeOpenDeposit, recordOpenPurchase, archiveOpenPurchase, recordWithdrawalAttempt, purchaseWithdrawalAttempts, recordSent, recordPendingSubmission, archivePendingSubmission, defaultFee, chosenFee, parseFee, type Settings, type ChosenEndpoint, type KeyValueStore, type OpenPurchase, type SentTransaction } from "../lib/wallet/settings.ts";
 import type { WalletState, AccountView, SignedSubmit } from "../lib/wallet/types.ts";
 import { decodeOrderRequest, type BuyOrder, type SellOrder } from "../lib/wallet/order.ts";
 import { decodeWriteRequest } from "../lib/wallet/write-request.ts";
 import { backupMenu, restoreMenu, type BackupHost } from "./backup.ts";
 import { scanner, scannerFileTexts } from "./scanner.ts";
 import { textSvg } from "../lib/qr/render.ts";
-import { isAccountAddress, LABEL_MAX } from "../lib/wallet/session.ts";
+import { isAccountAddress, LABEL_MAX, depositBody, receiptBody, withdrawalBody, type SwapOffer } from "../lib/wallet/session.ts";
 import { replacementTransfer } from "../lib/wallet/replacement.ts";
+import { brandMark } from "./mark.ts";
+import { icon } from "./icons.ts";
 
 export interface Platform {
   /** The signer: the extension's background worker, or the desktop app's in-page signer. */
@@ -105,8 +107,10 @@ export interface Platform {
   writeRequests?: boolean;
   /** Reopen a backup flow in a full page (the extension: a tab, for camera, files and print). */
   openFullPage?(view: "backup" | "restore" | "wallet"): void;
-  /** Start in this flow (the full page the popup opened). */
-  initialView?: "backup" | "restore";
+  /** Start in this flow (the full page the popup opened, or the window an account handed over opened). */
+  initialView?: "backup" | "restore" | "web-account";
+  /** Open Selfhold's window, to hand its account here (the extension: a tab at wallet.selfhold.app). */
+  openWebWallet?(): void;
   /** Save a text file (default: a browser download); resolves to where it went. */
   saveFile?(name: string, text: string): Promise<string | void>;
   /** Print the page (default: window.print). */
@@ -125,35 +129,6 @@ export const h = (tag: string, attrs: Record<string, unknown> = {}, ...kids: (No
   for (const kid of kids) if (kid != null) n.append(kid as Node | string);
   return n;
 };
-type ActionIcon = "copy" | "refresh" | "edit";
-/** Familiar Lucide action geometry, redrawn at Lattice's hairline weight. */
-function actionIcon(name: ActionIcon): SVGSVGElement {
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg");
-  for (const [key, value] of Object.entries({
-    class: "action-icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
-    "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round",
-    "aria-hidden": "true", focusable: "false",
-  })) svg.setAttribute(key, value);
-  const shape = (tag: "path" | "rect", attributes: Record<string, string>) => {
-    const node = document.createElementNS(ns, tag);
-    for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
-    svg.append(node);
-  };
-  if (name === "refresh") {
-    shape("path", { d: "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" });
-    shape("path", { d: "M21 3v5h-5" });
-    shape("path", { d: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" });
-    shape("path", { d: "M8 16H3v5" });
-  } else if (name === "edit") {
-    shape("path", { d: "M21.17 6.81a1 1 0 0 0-3.98-3.98L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z" });
-    shape("path", { d: "m15 5 4 4" });
-  } else {
-    shape("rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" });
-    shape("path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" });
-  }
-  return svg;
-}
 const short = (s: string) => (s.length <= 22 ? s : `${s.slice(0, 12)}…${s.slice(-8)}`);
 // Exact: amounts are UInt64, never rounded through a double.
 const fmt = (n: string | bigint) => BigInt(n).toLocaleString();
@@ -186,13 +161,22 @@ export const render = (node: El) => {
   }
   showHeaderControls();
 };
-/** The header's controls act only on an open wallet with a node, so they are shown only then. */
+/**
+ * The header's controls act only on an open wallet with a node, so they are
+ * shown only then. Until then the mark stands in the corner alone: Selfhold's,
+ * and not a button.
+ */
 function showHeaderControls() {
   const usable = !!st?.initialized && !st.locked && !!settings && !!activeAccount() && !!endpoint();
-  for (const id of ["settings-button", "net-badge"]) {
-    const control = document.getElementById(id);
-    if (control) control.style.visibility = usable ? "" : "hidden";
+  const settingsButton = document.getElementById("settings-button");
+  if (settingsButton) {
+    let mark = document.getElementById("brand-mark");
+    if (!mark) { mark = h("span", { id: "brand-mark", class: "brand-mark" }, brandMark(18, "Selfhold")); settingsButton.before(mark); }
+    mark.hidden = usable;
+    settingsButton.hidden = !usable;
   }
+  const badge = document.getElementById("net-badge");
+  if (badge) badge.style.visibility = usable ? "" : "hidden";
 }
 const onSettingsScreen = () => !!document.getElementById("settings-screen");
 
@@ -681,6 +665,10 @@ function route() {
   if (start === "restore" && !st.initialized) return restoreMenu(backupHost());
   if (start === "backup" && st.initialized && !st.locked) return backupMenu(backupHost());
   if (start === "backup" && st.locked) initialView = start; // after unlock
+  if (start === "web-account") {
+    if (st.initialized && st.locked) initialView = start; // after unlock
+    else return void webAccountScreen();
+  }
   if (!st.initialized) return welcome();
   if (st.locked) return unlockScreen();
   if (!endpoint()) return endpointScreen();
@@ -692,7 +680,7 @@ function route() {
 function welcome() {
   render(
     h("div", { class: "stack" },
-      h("div", { class: "hero" }, h("span", { class: "wordmark" }, "SELFHOLD"), h("p", { class: "muted" }, "open-source. self-custodial. your keys, your control.")),
+      h("div", { class: "hero" }, brandMark(96), h("span", { class: "wordmark" }, "SELFHOLD"), h("p", { class: "muted" }, "open-source. self-custodial. your keys, your control.")),
       h("button", { class: "block", onclick: createFlow }, "Create wallet"),
       h("button", { class: "btn block", onclick: restoreChoice }, "Restore or import"),
     ),
@@ -745,8 +733,22 @@ function showMnemonic(password: string) {
       h("h1", {}, "Recovery phrase"),
       h("p", { class: "warn" }, "Write these 12 words down, in order, and keep them offline. Anyone with them controls your funds."),
       h("div", { class: "mnemonic" }, phrase),
-      h("button", { class: "block", onclick: async () => { const r = await wallet.create(password, { mnemonic: phrase }); if (r.ok) { st = r.state; route(); } } }, "I saved it — create"),
+      h("button", { class: "block", onclick: async () => { const r = await wallet.create(password, { mnemonic: phrase }); if (r.ok) { st = r.state; walletCreated(); } } }, "I saved it — create"),
       h("button", { class: "btn block", onclick: createFlow }, "Back"),
+    ),
+  );
+}
+
+/**
+ * A milestone (docs/brand/guidebook.md §7): the mark at 96, revealed once,
+ * then one line. The only celebration; a routine send never gets one.
+ */
+function walletCreated() {
+  render(
+    h("div", { class: "stack" },
+      h("div", { class: "hero milestone" }, brandMark(96), h("h1", { class: "wordmark" }, "Wallet created")),
+      h("p", { class: "muted center" }, "Your keys live on this device, and your 12 words bring them back anywhere."),
+      h("button", { class: "block", onclick: route }, "Continue"),
     ),
   );
 }
@@ -783,8 +785,8 @@ function unlockScreen() {
   p.addEventListener("keydown", (e) => { if ((e as KeyboardEvent).key === "Enter") submit(); });
   render(
     h("div", { class: "stack" },
-      h("div", { class: "hero" }, h("span", { class: "wordmark" }, "WALLET")),
-      h("h1", {}, "Unlock"),
+      // The mark over the name: the screen people see most often is Selfhold's.
+      h("div", { class: "hero gate" }, brandMark(56), h("h1", { class: "wordmark" }, "SELFHOLD")),
       p, err,
       h("button", { class: "block", onclick: submit }, "Unlock"),
     ),
@@ -1106,12 +1108,17 @@ async function mainScreen() {
       return;
     }
     if (v === "__import") return importKeyFlow();
+    if (v === "__web") {
+      (e.target as HTMLSelectElement).value = acct!.address;
+      return platform.openWebWallet?.();
+    }
     await wallet.setActive(v); await refresh();
   } }) as HTMLSelectElement;
   const pickerText = (a: AccountView) => `${a.label} · ${short(a.address)}`;
   for (const a of st.accounts) accountPicker.append(h("option", { value: a.address, ...(a.address === acct.address ? { selected: "true" } : {}) }, pickerText(a)));
   accountPicker.append(h("option", { value: "__add" }, "+ Add account"));
   accountPicker.append(h("option", { value: "__import" }, "+ Import key"));
+  if (platform.openWebWallet) accountPicker.append(h("option", { value: "__web" }, "+ Selfhold web account"));
 
   // The name is changed where it is read: the pencil turns it into a field
   // holding it, Enter or leaving the field keeps the new one, Escape the old.
@@ -1170,7 +1177,7 @@ async function mainScreen() {
           h("button", {
             class: "btn icon-action", type: "button", title: "Refresh balance", "aria-label": "Refresh balance",
             onclick: () => loadBalance(),
-          }, actionIcon("refresh")),
+          }, icon("refresh")),
         ),
         h("span", { class: "balance-value" }, balanceV),
         h("div", { class: "account-line" },
@@ -1181,7 +1188,7 @@ async function mainScreen() {
           h("button", {
             class: "btn icon-action", type: "button", title: "Rename account", "aria-label": "Rename account",
             onclick: () => renameInPlace(),
-          }, actionIcon("edit")),
+          }, icon("edit")),
           h("button", {
             class: "btn icon-action", type: "button", title: "Copy account address", "aria-label": "Copy account address",
             onclick: async () => {
@@ -1192,7 +1199,7 @@ async function mainScreen() {
                 toast.textContent = "Could not copy the account address.";
               }
             },
-          }, actionIcon("copy")),
+          }, icon("copy")),
         ),
       ),
       h("div", { class: "primary-actions" },
@@ -1279,7 +1286,7 @@ function settingsScreen() {
       navRow("Lock wallet", async () => { await wallet.lock(); await refresh(); }, "", false),
     ),
     navGroup(`This chain · ${settings.chain}`,
-      navRow("Default fee", feeScreen, fmt(defaultFee(settings, settings.chain))),
+      navRow("Network fee", feeScreen, chosenFee(settings, settings.chain) === undefined ? "Automatic" : `Fixed · ${fmt(chosenFee(settings, settings.chain)!)}`),
     ),
     // A wallet on its own node with no page for it has nothing to set here.
     ...(hostRows.length || !platform.ownNode ? [navGroup("Node",
@@ -1452,6 +1459,8 @@ function purchaseScreen(purchase: OpenPurchase, openingMessage?: string) {
   const childEndpoint = endpointFor(childName);
   const parentEndpoint = endpointFor(parentName);
   const totalReceive = purchase.offers.reduce((sum, offer) => sum + BigInt(offer.amountDeposited), 0n);
+  const swapOffers: SwapOffer[] = purchase.offers.map((offer) => ({ demander: offer.demander, amountDemanded: BigInt(offer.amountDemanded),
+    amountDeposited: BigInt(offer.amountDeposited), depositNonce: BigInt(offer.depositNonce) }));
   const totalPaid = purchase.offers.reduce((sum, offer) => sum + BigInt(offer.amountDemanded), 0n);
   const feeInput = h("input", { type: "text", inputmode: "numeric", value: defaultFee(settings, childName) }) as HTMLInputElement;
   const toast = h("div", { class: "toast" }, openingMessage
@@ -1475,6 +1484,20 @@ function purchaseScreen(purchase: OpenPurchase, openingMessage?: string) {
     withdraw.disabled = true;
     return;
   }
+  if (!purchase.withdrawalCID && chosenFee(settings, childName) === undefined) {
+    // Automatic: the child node's fee, unless the person already typed one.
+    let typed = false;
+    feeInput.addEventListener("input", () => { typed = true; }, { once: true });
+    void authorizationFor(childEndpoint.url)
+      .then((auth) => readFeeMarket(reader(childEndpoint.url, purchase.childChain, platform.fetch, auth)))
+      .then((market) => {
+        // Typed, or tried (`used`: an attempt read it): leave it.
+        if (typed || feeInput.dataset.used) return;
+        feeInput.value = automaticFee(market, (f) => weigh(market, withdrawalBody(purchase.withdrawer,
+          { offers: swapOffers, fee: f, nonce: 1_000_000n, chainPath: [...purchase.childChain] }))).toString();
+      })
+      .catch(() => {});
+  }
   if (purchase.withdrawalCID) {
     const attempts = purchaseWithdrawalAttempts(purchase);
     const latestAttempt = attempts.find((attempt) => attempt.transactionCID === purchase.withdrawalCID) ?? attempts.at(-1);
@@ -1484,14 +1507,15 @@ function purchaseScreen(purchase: OpenPurchase, openingMessage?: string) {
       const oldCredit = body.accountActions.find((action) => action.owner === purchase.withdrawer)?.delta;
       const oldFee = oldCredit === undefined ? 0n : totalReceive - BigInt(oldCredit);
       const replacementFee = h("input", {
-        type: "text", inputmode: "numeric",
-        value: (oldFee + 1n > BigInt(defaultFee(settings, childName)) ? oldFee + 1n : BigInt(defaultFee(settings, childName))).toString(),
+        type: "text", inputmode: "numeric", "aria-label": "Replacement fee", value: nextReplacementFee(oldFee).toString(),
       }) as HTMLInputElement;
+      suggestReplacementFee(replacementFee, oldFee, childEndpoint.url, purchase.childChain, Promise.resolve(auth),
+        (f) => withdrawalBody(purchase.withdrawer, { offers: swapOffers, fee: f, nonce: BigInt(body.nonce), chainPath: [...purchase.childChain] }));
       const replace = h("button", { class: "btn block", onclick: async () => {
         const fee = parseFee(replacementFee.value);
         if (fee === null || fee <= oldFee) { toast.textContent = `Enter a fee above the previous ${oldFee}.`; return; }
         if (fee >= totalReceive) { toast.textContent = "The child amount must exceed the replacement fee."; return; }
-        replace.disabled = true; replacementFee.disabled = true; toast.textContent = "Signing a same-nonce fee replacement…";
+        replace.disabled = true; replacementFee.disabled = true; replacementFee.dataset.used = "true"; toast.textContent = "Signing a same-nonce fee replacement…";
         try {
           const signed = await wallet.signWithdrawal({
             from: purchase.withdrawer, offers: purchase.offers, fee: fee.toString(),
@@ -1617,7 +1641,7 @@ function purchaseScreen(purchase: OpenPurchase, openingMessage?: string) {
     const fee = parseFee(feeInput.value);
     if (fee === null) { toast.textContent = "Enter a whole fee of 0 or more."; return; }
     if (totalReceive <= fee) { toast.textContent = "The child amount must exceed the withdrawal fee."; return; }
-    withdraw.disabled = true; feeInput.disabled = true; toast.textContent = "Checking parent receipt…";
+    withdraw.disabled = true; feeInput.disabled = true; feeInput.dataset.used = "true"; toast.textContent = "Checking parent receipt…";
     try {
       const [parentAuth, childAuth] = await Promise.all([authorizationFor(parentEndpoint.url), authorizationFor(childEndpoint.url)]);
       const offers: ActiveDeposit[] = purchase.offers.map((offer) => ({
@@ -1761,7 +1785,7 @@ async function reviewBuyOrder(order: BuyOrder) {
     demander: deposit.demander, amountDemanded: BigInt(deposit.amountDemanded),
     amountDeposited: BigInt(deposit.amountDeposited), depositNonce: BigInt(deposit.depositNonce),
   }));
-  let minRelayFee: bigint | undefined, childMinRelayFee: bigint | undefined;
+  let minRelayFee: bigint | undefined, childMinRelayFee: bigint | undefined, parentMarket: FeeMarket | undefined;
   const verifySelected = () => withStableTip(parentEndpoint, order.parentChain, parentAuth, async (parentTip) => {
     await requireCommittedChild(parentEndpoint, order.parentChain, childEndpoint, order.childChain, parentAuth, childAuth, parentTip);
     const listed = await withStableTip(childEndpoint, order.childChain, childAuth,
@@ -1780,10 +1804,11 @@ async function reviewBuyOrder(order: BuyOrder) {
   try {
     const refusal = unavailable(await verifySelected());
     if (refusal) { toast.textContent = refusal; return; }
-    [minRelayFee, childMinRelayFee] = await Promise.all([
-      reader(parentEndpoint.url, [...order.parentChain], platform.fetch, parentAuth).chainInfo().then((info) => info.minRelayFee),
+    [parentMarket, childMinRelayFee] = await Promise.all([
+      readFeeMarket(reader(parentEndpoint.url, [...order.parentChain], platform.fetch, parentAuth)),
       reader(childEndpoint.url, [...order.childChain], platform.fetch, childAuth).chainInfo().then((info) => info.minRelayFee),
     ]);
+    minRelayFee = parentMarket.minRelayFee;
   } catch (e) { toast.textContent = "Could not check the selected sell orders: " + (e instanceof Error && !(e instanceof TypeError) ? e.message : describe(e)); return; }
   const totalPay = offers.reduce((sum, offer) => sum + offer.amountDemanded, 0n);
   const totalReceive = offers.reduce((sum, offer) => sum + offer.amountDeposited, 0n);
@@ -1791,7 +1816,8 @@ async function reviewBuyOrder(order: BuyOrder) {
     toast.textContent = "These sell orders cannot cover the fee of the child-chain withdrawal transaction.";
     return;
   }
-  const feeInput = h("input", { type: "text", inputmode: "numeric", value: defaultFee(settings, parentName) }) as HTMLInputElement;
+  const receiptSize = (f: bigint) => weigh(parentMarket, receiptBody(acct.address, { offers, directory: order.childChain.at(-1)!, fee: f, nonce: 1_000_000n, chainPath: [...order.parentChain] }));
+  const feeInput = h("input", { type: "text", inputmode: "numeric", value: defaultFee(settings, parentName, parentMarket && automaticFee(parentMarket, receiptSize)) }) as HTMLInputElement;
   const feeNote = h("div", { class: "warn" });
   const checkFee = () => {
     const fee = parseFee(feeInput.value);
@@ -1959,16 +1985,20 @@ async function reviewSellOrder(order: SellOrder) {
   const reads = reader(chosen.url, [...order.childChain], platform.fetch, authorization);
   const deposited = BigInt(order.amountDeposited);
   const demanded = BigInt(order.amountDemanded);
-  const feeInput = h("input", { type: "text", inputmode: "numeric", value: defaultFee(settings, settings.chain) }) as HTMLInputElement;
   const toast = h("div", { class: "toast" }, "reading account…");
   render(h("div", { class: "stack" }, h("h1", {}, "Review sell order"), toast,
     h("button", { class: "btn block", onclick: orderFlow }, "Cancel"),
   ));
   let minRelayFee: bigint | undefined;
+  let market: FeeMarket;
   try {
-    const info = await reads.chainInfo();
-    minRelayFee = info.minRelayFee;
+    market = await readFeeMarket(reads);
+    minRelayFee = market.minRelayFee;
   } catch (e) { toast.textContent = describe(e); return; }
+  // The deposit is paid on the child chain, so its fee is that chain's.
+  const depositSize = (f: bigint) => weigh(market, depositBody(acct.address,
+    { amountDeposited: deposited, amountDemanded: demanded, depositNonce: 1n << 63n, fee: f, nonce: 1_000_000n, chainPath: [...order.childChain] }));
+  const feeInput = h("input", { type: "text", inputmode: "numeric", value: defaultFee(settings, chain, automaticFee(market, depositSize)) }) as HTMLInputElement;
   toast.textContent = ""; // the read is done; the same element reports signing below
   const depositNonce = randomNonce();
   const feeNote = h("div", { class: "warn" });
@@ -2092,6 +2122,50 @@ async function importKeyFlow() {
   );
 }
 
+/**
+ * The account Selfhold's window handed over, waiting in the worker: added
+ * here under its own name, to this wallet or as a new one, or not. The key
+ * stays in the worker; this page sees only the address.
+ */
+async function webAccountScreen() {
+  const pending = await wallet.webAccountPending();
+  const address = pending.ok ? pending.address : null;
+  const close = () => window.close();
+  if (!address) {
+    render(h("div", { class: "stack" },
+      h("h1", {}, "Nothing to add"),
+      h("p", { class: "muted" }, "Selfhold's window hands its account over for two minutes. Hand it over again from there."),
+      h("button", { class: "block", onclick: close }, "Close"),
+    ));
+    return;
+  }
+  const fields = st.initialized ? null : passwordFields();
+  const err = h("div", { class: "toast" });
+  const add = async () => {
+    const password = fields ? fields.get() : undefined;
+    if (fields && password === null) return;
+    const r = await wallet.webAccountAccept(address, password ?? undefined);
+    if (!r.ok) { err.textContent = r.error; return; }
+    st = r.state;
+    const named = st.accounts.find((a) => a.address === address)?.label ?? "Selfhold web";
+    render(h("div", { class: "stack" },
+      h("h1", {}, "Added"),
+      h("p", { class: "muted" }, `Your Selfhold web account is an account here now, named ${named}: the same address, coins and names in both.`),
+      h("button", { class: "block", onclick: close }, "Done"),
+    ));
+  };
+  render(h("div", { class: "stack" },
+    h("h1", {}, "Add your Selfhold web account"),
+    h("p", { class: "muted" }, "Selfhold's window (wallet.selfhold.app) handed over the account its passkey keeps. Added here, it is the same account in both: the same address, coins and names."),
+    h("p", { class: "mono" }, address),
+    h("p", { class: "muted" }, "Check it is the address Selfhold's window shows. Add only an account you just handed over yourself."),
+    ...(fields ? [h("p", { class: "muted" }, "First, a password for this extension's wallet."), fields.node] : []),
+    err,
+    h("button", { class: "block", onclick: add }, "Add account"),
+    h("button", { class: "btn block", onclick: async () => { await wallet.webAccountDecline(); close(); } }, "Not now"),
+  ));
+}
+
 /** A typed 64-hex key, or a pasted `lattice key generate` key file. */
 function privateKeyText(text: string): string {
   const raw = text.trim();
@@ -2123,30 +2197,61 @@ async function sendFlow() {
   const sendContext = { chain: settings.chain, path: [...chainPath()], chosen: { ...endpoint()! }, acct };
   const to = h("input", { type: "text", placeholder: "recipient address (bafy…)", spellcheck: "false" }) as HTMLInputElement;
   const amount = h("input", { type: "text", inputmode: "numeric", placeholder: `amount on ${sendContext.chain}`, "aria-label": "Amount" }) as HTMLInputElement;
-  const fee = h("input", { type: "text", inputmode: "numeric", value: defaultFee(settings, settings.chain) }) as HTMLInputElement;
+  const fee = h("input", { type: "text", inputmode: "numeric", value: defaultFee(settings, settings.chain), "aria-label": "Network fee" }) as HTMLInputElement;
   const feeNote = h("div", { class: "warn" });
-  const feeHelp = h("p", { class: "muted" }, "The wallet never changes your fee. A node minimum is only a warning; confirmation depends on miners and current demand.");
+  // Automatic until the person types or picks a fee (or saved one for this
+  // chain): then the fee is theirs, warned about but never changed.
+  let automatic = chosenFee(settings, settings.chain) === undefined;
+  // The node's floor, its pool's next blocks, and the chain's block time.
+  let market: FeeMarket | undefined;
+  const feeHelp = h("p", { class: "muted fee-line", role: "status" });
+  const feeChoices = h("div", { class: "fee-choices", role: "group", "aria-label": "Fee speed" });
+  const feeFloor = h("p", { class: "muted" });
+  const useAutomatic = h("button", { class: "text-action", type: "button", onclick: () => { automatic = true; picked = undefined; refreshFee(); } }, "Use automatic fee") as HTMLButtonElement;
   const feeAdvanced = h("details", { class: "advanced" },
     h("summary", {}, "Custom fee"),
-    h("div", { class: "advanced-content" },
-      h("label", { class: "k" }, "Network fee"), fee, feeNote,
+    h("div", { class: "advanced-content stack" },
+      h("label", { class: "k" }, "Network fee"), fee, feeFloor, feeNote, useAutomatic,
     ),
   ) as HTMLDetailsElement;
   const err = h("div", { class: "toast" });
   const submitOK = endpoint()!.acceptsSubmit;
-  // The chosen endpoint's relay floor (its policy): read once, warned against, never applied.
-  let minRelayFee: bigint | undefined;
-  const checkFee = () => {
+  const typedAmount = () => /^[1-9][0-9]*$/.test(amount.value.trim()) ? BigInt(amount.value.trim()) : undefined;
+  const size = (f: bigint) => weigh(market, transferBody({ from: acct.address, to: isAccountAddress(to.value.trim()) ? to.value.trim() : undefined, amount: typedAmount(), fee: f, chainPath: sendContext.path }));
+  // A speed picked below the next block's: kept as the transaction's size changes.
+  let picked: "soon" | "minimum" | undefined;
+  function refreshFee() {
+    if (market && automatic) fee.value = automaticFee(market, size).toString();
+    else if (market && picked) fee.value = feeChoice(market, size(BigInt(fee.value || "0")))[picked].toString();
     const f = parseFee(fee.value);
-    const warning = f === null ? "" : feeWarning(f, minRelayFee) ?? "";
+    const warning = f === null || !market ? "" : feeWarning(f, market.minRelayFee) ?? "";
     feeNote.textContent = warning;
     if (warning) feeAdvanced.open = true;
-  };
-  fee.addEventListener("input", checkFee);
-  void authorizationFor(sendContext.chosen.url).then((auth) => reader(sendContext.chosen.url, sendContext.path, platform.fetch, auth).chainInfo()).then((info) => {
-    minRelayFee = info.minRelayFee;
-    checkFee();
-  }).catch(() => {});
+    useAutomatic.hidden = automatic;
+    feeFloor.textContent = market ? `This node's minimum: ${fmt(market.minRelayFee)}.` : "";
+    feeHelp.textContent = f === null ? "Enter a whole fee of 0 or more." : feeLine(f, automatic, market, market && feeChoice(market, size(f)));
+    const choice = market && feeChoice(market, size(f ?? 0n));
+    // Choices only when they differ: on a chain with room, every fee at the floor makes the next block.
+    feeChoices.replaceChildren(...(choice?.busy ? ([
+      ["Next block", choice.nextBlock], ["In 3 blocks", choice.soon], ["Minimum", choice.minimum],
+    ] as const).map(([label, value]) => h("button", {
+      class: "btn", type: "button", "aria-pressed": String(f === value),
+      onclick: () => {
+        automatic = label === "Next block";
+        picked = label === "In 3 blocks" ? "soon" : label === "Minimum" ? "minimum" : undefined;
+        fee.value = value.toString(); refreshFee();
+      },
+    }, h("span", { class: "fee-choice-label" }, label), h("span", { class: "fee-choice-value" }, fmt(value)))) : []));
+  }
+  fee.addEventListener("input", () => { automatic = false; picked = undefined; refreshFee(); });
+  // A recipient or amount changes the transaction's size, which prices a fee only while blocks are full.
+  to.addEventListener("input", () => { if (market?.blocks?.[0]?.full) refreshFee(); });
+  amount.addEventListener("input", () => { if (market?.blocks?.[0]?.full) refreshFee(); });
+  refreshFee();
+  void authorizationFor(sendContext.chosen.url)
+    .then((auth) => readFeeMarket(reader(sendContext.chosen.url, sendContext.path, platform.fetch, auth)))
+    .then((read) => { market = read; refreshFee(); })
+    .catch(() => { if (automatic) feeHelp.textContent = "Could not read this node's fee. Set one under Custom fee, or try again."; });
   render(
     h("div", { class: "stack" },
       h("h1", {}, "Send on " + settings.chain),
@@ -2154,6 +2259,7 @@ async function sendFlow() {
       h("label", { class: "k" }, "To"), to,
       h("label", { class: "k" }, "Amount"), amount,
       feeHelp,
+      feeChoices,
       feeAdvanced,
       err,
       ...(submitOK ? [h("button", { class: "block", onclick: () => prepareReview() }, "Review")] : []),
@@ -2174,20 +2280,40 @@ async function sendFlow() {
     let nonce: bigint, balance: bigint;
     try {
       const reads = reader(sendContext.chosen.url, sendContext.path, platform.fetch, await authorizationFor(sendContext.chosen.url));
-      const [a, info] = await Promise.all([reads.account(acct.address), reads.chainInfo()]);
-      nonce = a.nonce; balance = a.balance; minRelayFee = info.minRelayFee;
+      const [a, read] = await Promise.all([reads.account(acct.address), readFeeMarket(reads)]);
+      nonce = a.nonce; balance = a.balance; market = read;
     } catch (e) { err.textContent = describe(e); return; }
+    // An automatic fee is priced now, for this exact transaction and the node's pool as it is.
+    const exact = (candidate: bigint) => weigh(market, transferBody({ from: acct.address, to: toAddr, amount: amt, fee: candidate, nonce, chainPath: sendContext.path }));
+    if (automatic) { f = automaticFee(market, exact); fee.value = f.toString(); }
+    else if (picked) { f = feeChoice(market, exact(f))[picked]; fee.value = f.toString(); }
     if (amt + f > balance) { err.textContent = `Insufficient balance (have ${fmt(balance.toString())}, need ${fmt((amt + f).toString())}).`; return; }
-    reviewScreen(toAddr, amt, f, nonce, minRelayFee, sendContext);
+    reviewScreen(toAddr, amt, f, nonce, market, sendContext, feeChoice(market, exact(f)));
   }
 }
 
-function reviewScreen(to: string, amount: bigint, fee: bigint, nonce: bigint, minRelayFee: bigint | undefined,
-  context: { chain: string; path: string[]; chosen: ChosenEndpoint; acct: NonNullable<ReturnType<typeof activeAccount>> }) {
+/** The send screen's one line about the fee: what it is, and what it buys from this node's pool. */
+function feeLine(fee: bigint, automatic: boolean, market: FeeMarket | undefined, choice: FeeChoice | undefined): string {
+  if (!market || !choice) return automatic ? "Network fee: checking this node…" : `Network fee ${fmt(fee)}.`;
+  const cadence = blockCadence(market.blockTime);
+  const said = fee === 0n ? "No network fee" : `Network fee ${fmt(fee)}`;
+  const line = fee < choice.minimum ? `A fee of ${fmt(fee)} is below this node's minimum of ${fmt(choice.minimum)}.`
+    : !choice.known ? (fee === choice.minimum ? `${said}: ${fee === 0n ? "this node asks none" : "this node's minimum"}.` : `${said}, above this node's minimum of ${fmt(choice.minimum)}.`)
+    : !choice.busy ? (fee > choice.minimum ? `${said}, more than needed: the next block has room at ${fmt(choice.minimum)}.` : `${said}: the next block has room.`)
+    : `Blocks are full, ${choice.waiting.toLocaleString()} transactions waiting. ${said} ${fee >= choice.nextBlock ? "is enough for the next block" : fee >= choice.soon ? "should get in within 3 blocks" : "may wait many blocks"}.`;
+  return `${line}${cadence ? ` Blocks come ${cadence}.` : ""}`;
+}
+
+function reviewScreen(to: string, amount: bigint, fee: bigint, nonce: bigint, market: FeeMarket,
+  context: { chain: string; path: string[]; chosen: ChosenEndpoint; acct: NonNullable<ReturnType<typeof activeAccount>> }, choice: FeeChoice) {
   const { acct, chain, path, chosen } = context;
+  const minRelayFee = market.minRelayFee;
   let acknowledgedPending: string | undefined;
   const toast = h("div", { class: "toast" });
-  const warning = feeWarning(fee, minRelayFee);
+  const slow = choice.busy && fee < choice.nextBlock && fee >= choice.minimum
+    ? `Blocks are full: this fee may wait ${fee >= choice.soon ? "a few blocks" : "many blocks"}. The next block needs ${fmt(choice.nextBlock)}; you can raise the fee from Activity while it waits.`
+    : undefined;
+  const warnings = [feeWarning(fee, minRelayFee), slow, highFeeWarning(fee, amount)].filter((w): w is string => w !== undefined);
   const sendButton = h("button", { class: "block", onclick: confirm }, "Sign & send") as HTMLButtonElement;
   render(
     h("div", { class: "stack" },
@@ -2205,11 +2331,11 @@ function reviewScreen(to: string, amount: bigint, fee: bigint, nonce: bigint, mi
         h("summary", {}, "Transaction details"),
         h("div", { class: "kv advanced-content" },
           h("div", { class: "row" }, h("span", { class: "k" }, "Nonce"), h("span", { class: "v" }, String(nonce))),
-          ...(minRelayFee === undefined ? [] : [h("div", { class: "row" }, h("span", { class: "k" }, "Node minimum"), h("span", { class: "v" }, fmt(minRelayFee.toString())))]),
+          h("div", { class: "row" }, h("span", { class: "k" }, "Node minimum"), h("span", { class: "v" }, fmt(minRelayFee.toString()))),
           h("div", { class: "row" }, h("span", { class: "k" }, "Node"), h("span", { class: "v mono" }, short(chosen.url))),
         ),
       ),
-      ...(warning ? [h("p", { class: "warn" }, warning)] : []),
+      ...warnings.map((w) => h("p", { class: "warn" }, w)),
       toast,
       sendButton,
       h("button", { class: "btn block", onclick: mainScreen }, "Cancel"),
@@ -2307,10 +2433,15 @@ function pendingSubmissionsScreen() {
         try { await navigator.clipboard.writeText(transaction.cid); message.textContent = "Transaction ID copied."; }
         catch { message.textContent = "Could not copy. Select the transaction ID above."; }
       },
-    }, actionIcon("copy")));
+    }, icon("copy")));
+    // Where it stands, as a shape beside the words (docs/brand/guidebook.md §6):
+    // in a block, the sent arrow; still waiting, the clock; anything less sure, none.
+    const glyph = h("span", { class: "transaction-glyph" });
+    const showGlyph = (kind?: string) => glyph.replaceChildren(...(kind === "included" ? [icon("sent")]
+      : kind === "pending" || kind === "pending or dropped" ? [icon("pending")] : []));
     const row = h("details", { class: "transaction-item" }, h("summary", {},
       h("div", { class: "transaction-summary" },
-        h("div", { class: "transaction-line" }, h("span", { class: "transaction-title" }, replacesCID ? "Fee replacement" : transaction.to.startsWith("buy on ") ? "Purchase payment" : transaction.to.startsWith("sell on ") ? "Sell order" : "Sent"), h("span", { class: "transaction-amount" }, fmt(transaction.amount))),
+        h("div", { class: "transaction-line" }, h("span", { class: "transaction-title" }, glyph, replacesCID ? "Fee replacement" : transaction.to.startsWith("buy on ") ? "Purchase payment" : transaction.to.startsWith("sell on ") ? "Sell order" : "Sent"), h("span", { class: "transaction-amount" }, `−${fmt(transaction.amount)}`)),
         h("div", { class: "transaction-line muted" }, h("span", { class: "transaction-context", title: chain }, chain), state),
       ),
     ), details);
@@ -2349,6 +2480,9 @@ function pendingSubmissionsScreen() {
         const result = (await reconciliationResult).get(transaction.cid) ?? await sentStatus(
           reader(chosen.url, chain.split("/"), platform.fetch, auth), transaction.cid, recorded);
         state.textContent = statusText(result);
+        showGlyph(result.kind);
+        // Replaced: its nonce went to another transaction, so this amount never moved.
+        row.classList.toggle("replaced", result.kind === "replaced");
         if (result.kind === "included" || result.kind === "replaced" || result.kind === "nonce advanced") increaseFee?.remove();
         if (result.kind === "included") {
           try {
@@ -2388,27 +2522,55 @@ function pendingSubmissionsScreen() {
       } catch { refreshNotice.textContent = "Could not refresh saved transactions. Try again."; }
       finally { refreshButton.disabled = false; }
     },
-  }, actionIcon("refresh")) as HTMLButtonElement;
+  }, icon("refresh")) as HTMLButtonElement;
   render(h("div", { class: "stack" },
     h("div", { class: "transaction-heading" }, h("h1", {}, "Transactions"), refreshButton),
     h("p", { class: "muted" }, `Local sent history for ${settings.chain}, plus saved recovery across chains. Not a complete on-chain history.`),
     refreshNotice,
     ...(pendingList.childElementCount ? [h("h2", { class: "section-label" }, `Pending recovery · ${pendingList.childElementCount}`), pendingList] : []),
     ...(recentList.childElementCount ? [h("h2", { class: "section-label" }, "Recent & archived"), recentList] : []),
-    ...(!seen.size ? [h("p", { class: "transaction-empty muted" }, "No transactions yet. Transactions sent from this wallet will appear here.")] : []),
+    ...(!seen.size ? [h("div", { class: "transaction-empty" }, icon("sent", 32),
+      h("h2", { class: "section-label" }, "No transactions yet"),
+      h("p", { class: "muted" }, "Transactions sent from this wallet appear here."))] : []),
     h("button", { class: "btn block", onclick: activityScreen }, "Back")));
+}
+
+/**
+ * A replacement's fee, once the node is read (`replacementFee`), unless the
+ * person has typed one meanwhile.
+ */
+function suggestReplacementFee(input: HTMLInputElement, previous: bigint, url: string, chainPath: readonly string[], auth: Promise<string | undefined>,
+  body?: (fee: bigint) => TransactionBody, why?: HTMLElement) {
+  let typed = false;
+  input.addEventListener("input", () => { typed = true; }, { once: true });
+  auth.then((authorization) => readFeeMarket(reader(url, [...chainPath], platform.fetch, authorization))).then((market) => {
+    // Typed, or tried (`used`: an attempt read it): the fee is no longer the wallet's to suggest.
+    if (typed || input.dataset.used) return;
+    const raised = nextReplacementFee(previous, market.minRelayFee);
+    const next = replacementFee(previous, market, body && ((f) => weigh(market, body(f))));
+    input.value = next.toString();
+    const room = market.blocks !== undefined && !market.blocks[0]?.full;
+    if (why) why.textContent = next > raised ? `Blocks are full: a replacement must be in the next block and raise what it pays, so ${fmt(next)}.`
+      : room && previous >= market.minRelayFee ? "The next block has room: this transaction should be in it without a higher fee."
+      : market.minRelayFee > 1n && raised === previous + market.minRelayFee ? `This node asks a replacement to pay its minimum, ${fmt(market.minRelayFee)}, more.`
+      : raised === previous + 1n ? "1 more than the previous fee: the least a replacement can pay."
+      : "A quarter above the previous fee: miners rank by fee per byte, so 1 more rarely moves a transaction ahead.";
+  }).catch(() => {});
 }
 
 function replacementScreen(original: Parameters<typeof replacementTransfer>[0], chosen: ChosenEndpoint) {
   const terms = replacementTransfer(original);
   if (!terms) return pendingSubmissionsScreen();
-  const fee = h("input", { type: "text", inputmode: "numeric", value: (terms.fee + 1n).toString(), "aria-label": "Replacement fee" }) as HTMLInputElement;
+  const fee = h("input", { type: "text", inputmode: "numeric", value: nextReplacementFee(terms.fee).toString(), id: "replacement-fee", "aria-label": "Replacement fee" }) as HTMLInputElement;
+  const why = h("p", { class: "muted" });
+  suggestReplacementFee(fee, terms.fee, chosen.url, terms.chainPath, authorizationFor(chosen.url),
+    (f) => transferBody({ from: terms.from, to: terms.to, amount: terms.amount, fee: f, nonce: terms.nonce, chainPath: terms.chainPath }), why);
   const message = h("div", { class: "toast", role: "status" });
   const confirm = h("button", { class: "block", onclick: async () => {
     if (confirm.disabled) return;
     const nextFee = parseFee(fee.value);
     if (nextFee === null || nextFee <= terms.fee) { message.textContent = `Enter a fee higher than ${terms.fee}.`; return; }
-    confirm.disabled = true; fee.disabled = true;
+    confirm.disabled = true; fee.disabled = true; fee.dataset.used = "true";
     try {
       const auth = await authorizationFor(chosen.url);
       const node = reader(chosen.url, terms.chainPath, platform.fetch, auth);
@@ -2445,7 +2607,7 @@ function replacementScreen(original: Parameters<typeof replacementTransfer>[0], 
       h("p", { class: "mono" }, `From: ${terms.from}`), h("p", { class: "mono" }, `To: ${terms.to}`),
       h("p", {}, `Amount: ${fmt(terms.amount)} · Chain: ${original.chain}`),
       h("p", {}, `Nonce: ${terms.nonce} · Previous fee: ${terms.fee}`)),
-    h("label", { class: "k", for: "replacement-fee" }, "New fee"), fee, message, confirm,
+    h("label", { class: "k", for: "replacement-fee" }, "New fee"), fee, why, message, confirm,
     h("button", { class: "btn block", onclick: pendingSubmissionsScreen }, "Back")));
   fee.id = "replacement-fee";
 }
@@ -2529,30 +2691,60 @@ async function historyScreen() {
 
 // ---------------- fee default ----------------
 
-/** The fee a new send on this chain starts with. Every send can still change it. */
+/**
+ * How this chain's transactions are priced: automatically from the node, or
+ * at a fixed fee the person sets. Every transaction can still change it.
+ */
 function feeScreen() {
-  const input = h("input", { type: "text", inputmode: "numeric", value: defaultFee(settings, settings.chain) }) as HTMLInputElement;
+  const chain = settings.chain;
+  const fixed = chosenFee(settings, chain);
+  const radio = (value: string, checked: boolean) => h("input", { type: "radio", name: "fee-mode", value, ...(checked ? { checked: "" } : {}) }) as HTMLInputElement;
+  const automaticOption = radio("automatic", fixed === undefined);
+  const fixedOption = radio("fixed", fixed !== undefined);
+  const input = h("input", { type: "text", inputmode: "numeric", value: fixed ?? "", placeholder: "fee", "aria-label": "Fixed fee" }) as HTMLInputElement;
+  const now = h("span", {}, "Checking this node…");
   const note = h("div", { class: "warn" });
   const err = h("div", { class: "toast" });
-  let minRelayFee: bigint | undefined;
-  const check = () => { const f = parseFee(input.value); note.textContent = f === null ? "" : feeWarning(f, minRelayFee) ?? ""; };
+  let market: FeeMarket | undefined;
+  const check = () => {
+    input.disabled = !fixedOption.checked;
+    const f = parseFee(input.value);
+    note.textContent = !fixedOption.checked || f === null || !market ? "" : feeWarning(f, market.minRelayFee) ?? "";
+    if (!market) return;
+    // Priced as a transfer from the active account, as a send would be.
+    const from = activeAccount()?.address;
+    const size = (f: bigint) => from ? weigh(market, transferBody({ from, fee: f, chainPath: chainPath() })) : estimatedWeight(market);
+    const auto = automaticFee(market, size);
+    const choice = feeChoice(market, size(auto));
+    const cadence = blockCadence(market.blockTime);
+    now.textContent = `Right now: ${auto === 0n ? "no fee" : fmt(auto)} for a transfer${choice.busy ? ", as blocks are full" : ""}.${cadence ? ` Blocks come ${cadence}.` : ""}`;
+  };
+  for (const option of [automaticOption, fixedOption]) option.addEventListener("change", () => { check(); if (fixedOption.checked) input.focus(); });
   input.addEventListener("input", check);
-  client().chainInfo().then((info) => { minRelayFee = info.minRelayFee; check(); }).catch(() => {});
+  readFeeMarket(client()).then((read) => { market = read; check(); }).catch(() => { now.textContent = "Could not read this node's fee."; });
   render(
     h("div", { class: "stack" },
-      h("h1", {}, "Default fee on " + settings.chain),
-      h("p", { class: "muted" }, "Paid to the miner as the debit over the credit. There is no estimate: you choose it, and you can change it on each send."),
+      h("h1", {}, "Network fee on " + chain),
+      h("p", { class: "muted" }, "Paid to the miner who includes your transaction. You can change it on each transaction."),
+      h("label", { class: "check fee-mode" }, automaticOption, h("span", { class: "fee-mode-text" }, h("strong", {}, "Automatic (recommended)"),
+        h("span", { class: "muted" }, "The node's minimum while blocks have room; what the next block needs when they are full. ", now))),
+      h("label", { class: "check fee-mode" }, fixedOption, h("span", { class: "fee-mode-text" }, h("strong", {}, "Fixed"),
+        h("span", { class: "muted" }, "The same fee every time. A node refuses a fee below its minimum."))),
       input, note, err,
       h("button", { class: "block", onclick: async () => {
+        if (automaticOption.checked) {
+          await update((s) => { const { [chain]: _, ...fees } = s.fees; return { ...s, fees }; });
+          return mainScreen();
+        }
         const f = parseFee(input.value);
         if (f === null) { err.textContent = "Enter a whole fee of 0 or more."; return; }
-        const chain = settings.chain;
         await update((s) => ({ ...s, fees: { ...s.fees, [chain]: f.toString() } }));
         mainScreen();
       } }, "Save"),
       h("button", { class: "btn block", onclick: mainScreen }, "Back"),
     ),
   );
+  check();
 }
 
 // ---------------- chain switch + boot ----------------

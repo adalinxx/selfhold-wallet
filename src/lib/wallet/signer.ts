@@ -9,7 +9,7 @@ import { deriveAccounts, toView, nextHdLabel, cleanLabel, signDeposit, signMessa
 import { deriveAccount, importPrivateKey } from "../crypto/accounts.ts";
 import { parseChainPath } from "../config.ts";
 import { isNonce, messageError, parseRecordsWrite } from "./provider.ts";
-import { nodeCookieAuthorization } from "@adalinxx/lattice-core";
+import { nodeCookieAuthorization } from "@adalin/lattice-core";
 import { backupContents, encryptBackup, decryptBackup, mergeWalletData } from "./backup.ts";
 import { newOffer, encodeOffer, decodeOffer, decodeEnvelope, encodeEnvelope, seal, open, type Offer } from "./pairing.ts";
 import { standardSeedQR, compactSeedQR, latin1 } from "../qr/seedqr.ts";

@@ -7,10 +7,10 @@ import type { Settings } from "./settings.ts";
 import type { SignedSubmit } from "./types.ts";
 
 /** A transaction this wallet signed whose outcome it has not seen yet. */
-export interface KnownPending { chain: string; from: string; nonce: string }
+export interface KnownPending { chain: string; from: string; nonce: string; cid?: string }
 
 /** A page write the wallet sent (or may have: delivery can be uncertain), and where. */
-export interface PageWrite extends KnownPending { cid?: string; node?: string }
+export interface PageWrite extends KnownPending { node?: string }
 
 /**
  * The page writes still pending on `chain`: those at or above the chain's
@@ -24,7 +24,7 @@ export function livePageWrites(pageWrites: readonly PageWrite[], chain: string, 
 
 const fromSigned = (signed: SignedSubmit | undefined): KnownPending[] => {
   const body = signed?.payload.transaction.body;
-  return body?.signers.length ? [{ chain: body.chainPath.join("/"), from: body.signers[0], nonce: body.nonce }] : [];
+  return body?.signers.length ? [{ chain: body.chainPath.join("/"), from: body.signers[0], nonce: body.nonce, cid: signed!.transactionCID }] : [];
 };
 
 /**
@@ -34,8 +34,8 @@ const fromSigned = (signed: SignedSubmit | undefined): KnownPending[] => {
  */
 export function knownPending(settings: Settings, pageWrites: readonly KnownPending[]): KnownPending[] {
   return [
-    ...settings.pendingSubmissions.map(({ chain, from, nonce }) => ({ chain, from, nonce })),
-    ...settings.openDeposits.map((d) => ({ chain: d.childChain.join("/"), from: d.demander, nonce: d.transactionNonce })),
+    ...settings.pendingSubmissions.map(({ chain, from, nonce, cid }) => ({ chain, from, nonce, cid })),
+    ...settings.openDeposits.map((d) => ({ chain: d.childChain.join("/"), from: d.demander, nonce: d.transactionNonce, cid: d.transactionCID })),
     ...settings.openDeposits.flatMap((d) => fromSigned(d.signedSubmit)),
     ...settings.openPurchases.flatMap((p) => [p.receiptSubmit, ...(p.withdrawalAttempts ?? [])].flatMap(fromSigned)),
     ...pageWrites,

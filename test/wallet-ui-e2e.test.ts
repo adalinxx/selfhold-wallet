@@ -51,6 +51,7 @@ test("transactions UI: empty history is accessible from Activity", async () => {
   button("Transactions").click();
   assert.equal(document.querySelector("h1")?.textContent, "Transactions");
   assert.match(document.body.textContent ?? "", /No transactions yet/);
+  assert.equal(document.querySelector(".transaction-empty svg.icon")?.getAttribute("width"), "32", "an empty list: one 32 px glyph");
   assert.match(document.body.textContent ?? "", /Not a complete on-chain history/);
   button("Back").click();
   assert.equal(document.querySelector("h1")?.textContent, "Activity");
@@ -85,6 +86,36 @@ test("transactions RBF: higher fee, same payment and nonce, both attempts saved 
   assert.match(document.body.textContent ?? "", /Replacement refused.*Both attempts remain saved/s);
   assert.deepEqual(store.value.settings.pendingSubmissions.find((item: { cid: string }) => item.cid === record.cid)?.signedSubmit, original);
   assert.equal(store.value.settings.pendingSubmissions[0]?.replacesCID, record.cid);
+});
+
+test("transactions RBF: a late fee suggestion never changes a fee typed or already signed", async () => {
+  const account = importPrivateKey("a1".repeat(32));
+  const original = signTestTransfer(account, { to: bob, amount: 10n, fee: 1n, nonce: 3n, chainPath: ["Nexus"] });
+  const record = { cid: original.transactionCID, from: alice, to: bob, amount: "10", fee: "1", nonce: "3", chain: "Nexus", at: 1, signedSubmit: original };
+  for (const act of ["type", "sign"] as const) {
+    installDOM();
+    let release!: () => void;
+    const answered = new Promise<void>((resolve) => { release = resolve; });
+    const busy = nodeFetch({ projected: [{ lowestFee: 60n, full: true }] });
+    const signed: string[] = [];
+    const wallet = walletFor(openState(), { signTransfer: async (args) => {
+      signed.push(args.fee);
+      return { ok: true, summary: args, signedSubmit: signTestTransfer(account, { to: args.to, amount: BigInt(args.amount), fee: BigInt(args.fee), nonce: BigInt(args.nonce), chainPath: args.chainPath }) };
+    } });
+    await startWallet({ wallet, store: memoryStore({ pendingSubmissions: [record] }).api, requestOrigins: async () => true,
+      fetch: async (raw, init) => { if (new URL(raw).pathname === "/api/fees") await answered; return busy(raw, init); } });
+    await settle(); button("Activity").click();
+    button("Transactions").click(); await settle();
+    button("Increase fee").click();
+    const fee = document.querySelector('[aria-label="Replacement fee"]') as HTMLInputElement;
+    assert.equal(fee.value, "2", "before the node answers: a quarter above, at least 1 more");
+    if (act === "type") { fee.value = "5"; fee.dispatchEvent(new window.Event("input")); }
+    else button("Sign replacement").click();
+    release();
+    await settle();
+    assert.equal(fee.value, act === "type" ? "5" : "2", `${act}: the late suggestion leaves the field alone`);
+    if (act === "sign") assert.deepEqual(signed, ["2"], "signed as shown");
+  }
 });
 
 test("transactions UI: included rows show confirmations and accessible signed details", async () => {
@@ -156,6 +187,8 @@ test("transactions UI: disconnected recovery remains visible, archived rows dedu
   assert.equal(rows.length, 2);
   assert.ok(rows.every((row) => !row.open));
   assert.match(rows[0]!.textContent ?? "", /Nexus\/offline.*Not connected/s);
+  assert.equal(rows[0]!.querySelector(".transaction-glyph svg"), null, "not read: no shape");
+  assert.equal(rows[0]!.querySelector(".transaction-amount")?.textContent, "−15");
   assert.equal(rows[0]!.querySelectorAll("button").length, 2, "copy and dismiss work without an endpoint");
   assert.match(rows[1]!.textContent ?? "", /Archived locally/);
   assert.match(rows[1]!.textContent ?? "", /Status unavailable|unknown to node/);
@@ -168,6 +201,36 @@ test("transactions UI: disconnected recovery remains visible, archived rows dedu
   (rows[0]!.querySelector(".text-action") as HTMLButtonElement).click();
   await settle();
   assert.equal(store.value.settings.pendingSubmissions.length, 1, "cancelled dismissal retains recovery");
+});
+
+test("transactions UI: each state is a shape beside its words, and amounts carry their sign", async () => {
+  installDOM();
+  const sent = (cid: string, nonce: string, at: number) => ({ cid, from: alice, to: bob, amount: "40", fee: "1", nonce, at });
+  const store = memoryStore({ sent: { Nexus: [sent("bafyin", "1", 3000), sent("bafypend", "3", 2000), sent("bafyrepl", "2", 1000)] } });
+  const normal = nodeFetch();
+  const projection = (cid: string, nonce: string, extra: Record<string, unknown> = {}) => json({
+    txCID: cid, nonce, signers: [alice], chainPath: ["Nexus"], accountActions: [], depositActions: [], receiptActions: [], withdrawalActions: [], ...extra });
+  const fetch = async (raw: string | URL, init?: RequestInit) => {
+    const path = new URL(raw).pathname;
+    if (path === "/api/transaction/bafyin") return projection("bafyin", "1", { blockHeight: "5", blockHash: "bafyblock", timestamp: "1" });
+    if (path === "/api/transaction/bafypend") return projection("bafypend", "3");
+    if (path === "/api/transaction/bafyrepl") return projection("bafyrepl", "2");
+    if (path === "/api/mempool") return json({ count: 1, transactions: ["bafypend"] });
+    return normal(raw, init);
+  };
+  await startWallet({ wallet: walletFor(openState()), store: store.api, fetch, requestOrigins: async () => true });
+  await settle(); button("Activity").click(); button("Transactions").click(); await settle();
+  const rows = [...document.querySelectorAll(".transaction-item")];
+  const shape = (row: Element) => row.querySelector(".transaction-glyph svg")?.innerHTML ?? "";
+  assert.equal(rows.length, 3);
+  assert.match(rows[0]!.textContent ?? "", /included in block 5/);
+  assert.match(shape(rows[0]!), /M7 7h10v10/, "in a block: the sent arrow");
+  assert.match(rows[1]!.textContent ?? "", /pending/);
+  assert.match(shape(rows[1]!), /circle/, "waiting: the clock");
+  assert.match(rows[2]!.textContent ?? "", /its nonce was spent by another transaction/);
+  assert.equal(shape(rows[2]!), "", "replaced: no shape, the words say it");
+  assert.ok(rows[2]!.classList.contains("replaced"), "and its amount is struck through");
+  for (const row of rows) assert.equal(row.querySelector(".transaction-amount")?.textContent, "−40");
 });
 
 function memoryStore(overrides: Record<string, unknown> = {}) {
@@ -184,6 +247,9 @@ function memoryStore(overrides: Record<string, unknown> = {}) {
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 function nodeFetch(options: {
   balance?: bigint; minimum?: bigint; acceptsSubmit?: boolean;
+  /** `GET /api/fees` blocks; absent, the route is missing (an older node). */
+  projected?: { lowestFee: bigint; full: boolean }[];
+  blockTime?: bigint;
   failSubmit?: boolean;
   submitRefusal?: string;
   onSubmit?: () => void;
@@ -193,6 +259,10 @@ function nodeFetch(options: {
   return async (raw: string | URL, init?: RequestInit) => {
     const url = new URL(raw);
     if (url.pathname === "/api/chain/info") return json({ chain: ["Nexus"], minRelayFee: minimum.toString(), acceptsSubmit: options.acceptsSubmit ?? true });
+    if (url.pathname === "/api/fees" && options.projected) return json({ minRelayFee: minimum.toString(), blocks: options.projected.map((block) => ({
+      transactionCount: 5000, bytes: 999_000, lowestFee: block.lowestFee.toString(), lowestFeeBytes: 600, full: block.full })) });
+    if (url.pathname === "/api/chain/spec" && options.blockTime) return json({ targetBlockTime: options.blockTime.toString(), initialReward: "1", halvingInterval: "1",
+      maxBlockSize: 1_000_000, maxNumberOfTransactionsPerBlock: "5000", premine: "0", halfLife: "120" });
     if (url.pathname === `/api/state/account/${alice}`) return json({ owner: alice, balance: balance.toString(), nonce: "3" });
     if (url.pathname === "/api/block/latest") return json({ height: "8", hash: "bafytip", timestamp: "1", transactionCount: 0 });
     if (url.pathname === "/api/block/bafytip/children") return json({ children: [] });
@@ -229,6 +299,14 @@ test("wallet UI e2e: onboarding validation, secret handoff, lock, and keyboard u
   const store = memoryStore();
   await startWallet({ wallet, store: store.api, ownNode: "http://127.0.0.1:8080", fetch: nodeFetch(), requestOrigins: async () => true });
   assert.equal(document.querySelector(".wordmark")?.textContent, "SELFHOLD");
+  // Welcome shows the mark above the wordmark, beside it in words, so hidden from
+  // screen readers; the corner shows it alone, named, until the wallet is open.
+  const hero = document.querySelector(".hero svg.mark")!;
+  assert.equal(hero.getAttribute("width"), "96");
+  assert.equal(hero.getAttribute("aria-hidden"), "true");
+  assert.equal(document.querySelector("#brand-mark svg")?.getAttribute("aria-label"), "Selfhold");
+  assert.equal(document.getElementById("brand-mark")!.hidden, false);
+  assert.equal(document.getElementById("settings-button")!.hidden, true);
 
   button("Create wallet").click();
   input("password (min 8)").value = "short";
@@ -248,12 +326,18 @@ test("wallet UI e2e: onboarding validation, secret handoff, lock, and keyboard u
   assert.equal(created?.password, "correct horse");
   assert.equal(created?.mnemonic, phrase);
   assert.doesNotMatch(document.body.textContent ?? "", new RegExp(phrase.split(" ")[0]! + " " + phrase.split(" ")[1]!));
+  // The milestone: the mark at 96 over one line, then on.
+  assert.equal(document.querySelector("h1.wordmark")?.textContent, "Wallet created");
+  assert.equal(document.querySelector(".hero.milestone svg.mark")?.getAttribute("width"), "96");
+  button("Continue").click();
+  await settle();
 
   (document.getElementById("settings-button") as HTMLButtonElement).click();
   button("Lock wallet").click();
   await settle();
-  assert.equal(document.querySelector(".wordmark")?.textContent, "WALLET");
-  assert.equal(document.querySelector("h1")?.textContent, "Unlock");
+  // Unlock is Selfhold's, mark over name; the old "WALLET" is gone.
+  assert.equal(document.querySelector("h1.wordmark")?.textContent, "SELFHOLD");
+  assert.equal(document.querySelector(".hero svg.mark")?.getAttribute("width"), "56");
   const password = input("password");
   password.value = "wrong";
   password.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -282,7 +366,7 @@ test("wallet UI e2e: fee validation, review, signing, submission, and persistenc
   button("Send").click();
   await settle();
 
-  assert.match(document.body.textContent ?? "", /depends on miners and current demand/);
+  assert.match(document.body.textContent ?? "", /Network fee 1: this node's minimum\./, "automatic: the node's floor, stated in one line");
 
   const recipient = input("recipient address (bafy…)");
   const amount = (document.querySelector('input[aria-label="Amount"]') as HTMLInputElement);
@@ -315,6 +399,61 @@ test("wallet UI e2e: fee validation, review, signing, submission, and persistenc
   assert.deepEqual(signedArgs, { from: alice, to: bob, amount: "10", fee: "1", nonce: "3", chainPath: ["Nexus"] });
   assert.equal(store.value.settings.sent.Nexus?.[0]?.cid, "bafysent");
   assert.match(document.body.textContent ?? "", /bafysent/);
+});
+
+test("wallet UI e2e: the automatic fee follows the node's pool; full blocks offer choices and warn at review", async () => {
+  installDOM();
+  const signed: string[] = [];
+  const wallet = walletFor(openState(), {
+    signTransfer: async (args) => { signed.push(args.fee); return { ok: true, signedSubmit: { transactionCID: "bafysent", bodyCID: "bafybody", payload: { transaction: { signatures: {}, body: {
+      accountActions: [], actions: [], depositActions: [], receiptActions: [], withdrawalActions: [], signers: [alice], nonce: "3", chainPath: ["Nexus"] } } } },
+      summary: { from: args.from, to: args.to, amount: args.amount, fee: args.fee, nonce: args.nonce } }; },
+  });
+  const text = () => document.body.textContent ?? "";
+  // Room in the next block: the floor, said plainly, with the chain's cadence and no choices.
+  await startWallet({ wallet, store: memoryStore().api, ownNode: "http://127.0.0.1:8080", fetch: nodeFetch({ projected: [{ lowestFee: 9n, full: false }], blockTime: 3_600_000n }), requestOrigins: async () => true });
+  button("Send").click();
+  await settle();
+  assert.match(text(), /Network fee 1: the next block has room\. Blocks come about every hour\./);
+  assert.equal(document.querySelectorAll(".fee-choices button").length, 0, "no choices when every fee at the floor gets in");
+
+  // Full blocks: the next block's fee, three choices, and a warning for a cheaper one.
+  installDOM();
+  await startWallet({ wallet, store: memoryStore().api, ownNode: "http://127.0.0.1:8080",
+    fetch: nodeFetch({ balance: 1_000n, projected: [{ lowestFee: 60n, full: true }, { lowestFee: 30n, full: true }, { lowestFee: 6n, full: true }, { lowestFee: 1n, full: false }] }),
+    requestOrigins: async () => true });
+  button("Send").click();
+  await settle();
+  const fee = document.querySelector('input[aria-label="Network fee"]') as HTMLInputElement;
+  assert.ok(BigInt(fee.value) > 60n, `priced above the next block's lowest rate (${fee.value})`);
+  assert.match(text(), /Blocks are full, 20,000 transactions waiting\. Network fee \d+ is enough for the next block\./);
+  const choices = [...document.querySelectorAll(".fee-choices button")];
+  assert.deepEqual(choices.map((c) => c.querySelector(".fee-choice-label")?.textContent), ["Next block", "In 3 blocks", "Minimum"]);
+  assert.equal(choices[0]!.getAttribute("aria-pressed"), "true");
+  (choices[2] as HTMLButtonElement).click();
+  assert.equal(fee.value, "1", "Minimum: the floor");
+  assert.match(text(), /Network fee 1 may wait many blocks/);
+  assert.equal((document.querySelector(".fee-choices button:nth-child(3)") as HTMLElement).getAttribute("aria-pressed"), "true");
+  input("recipient address (bafy…)").value = bob;
+  (document.querySelector('input[aria-label="Amount"]') as HTMLInputElement).value = "10";
+  button("Review").click();
+  await settle();
+  assert.match(text(), /Blocks are full: this fee may wait many blocks\. The next block needs \d+; you can raise the fee from Activity while it waits\./);
+  button("Sign & send").click();
+  await settle();
+  assert.deepEqual(signed, ["1"], "the fee chosen is the fee signed");
+
+  // Back to automatic: the next block's fee again.
+  installDOM();
+  await startWallet({ wallet, store: memoryStore().api, ownNode: "http://127.0.0.1:8080",
+    fetch: nodeFetch({ projected: [{ lowestFee: 60n, full: true }] }), requestOrigins: async () => true });
+  button("Send").click();
+  await settle();
+  const again = document.querySelector('input[aria-label="Network fee"]') as HTMLInputElement;
+  again.value = "2"; again.dispatchEvent(new window.Event("input"));
+  assert.equal((document.querySelector("button.text-action") as HTMLButtonElement | null)?.hidden, false, "a typed fee offers the way back");
+  [...document.querySelectorAll("button")].find((b) => b.textContent === "Use automatic fee")!.click();
+  assert.ok(BigInt(again.value) > 60n);
 });
 
 test("wallet UI e2e: custom-fee warnings, read-only nodes, and receive copy", async () => {
@@ -569,7 +708,7 @@ test("wallet UI e2e: a wallet opened locked on a child chain offers the way up o
   await startWallet({ wallet, store: store.api, ownNode: "http://127.0.0.1:8080", fetch: nodeFetch(), requestOrigins: async () => true });
   await settle();
   const badge = document.getElementById("net-badge") as HTMLButtonElement;
-  assert.equal(document.querySelector("h1")?.textContent, "Unlock");
+  assert.equal(document.querySelector("h1")?.textContent, "SELFHOLD", "the unlock screen");
   badge.click();
   await settle();
   assert.equal(document.querySelector(".chain-menu"), null, "nothing to navigate while locked");
@@ -629,8 +768,12 @@ test("wallet UI e2e: a locked update re-reads storage and preserves another page
   } });
 
   (document.getElementById("settings-button") as HTMLButtonElement).click();
-  button("Default fee").click();
-  const fee = document.querySelector('input[inputmode="numeric"]') as HTMLInputElement;
+  button("Network fee").click();
+  const fixed = document.querySelector('input[type="radio"][value="fixed"]') as HTMLInputElement;
+  fixed.checked = true;
+  fixed.dispatchEvent(new window.Event("change"));
+  const fee = document.querySelector('input[aria-label="Fixed fee"]') as HTMLInputElement;
+  assert.equal(fee.disabled, false, "choosing Fixed opens the field");
   fee.value = "7";
   button("Save").click();
   await settle();
@@ -779,7 +922,9 @@ test("before there is a wallet, the header offers nothing that would do nothing"
   installDOM();
   const wallet = walletFor({ initialized: false, locked: true, accounts: [], active: null });
   await startWallet({ wallet, store: memoryStore().api, ownNode: "http://127.0.0.1:8080", fetch: nodeFetch(), requestOrigins: async () => true });
-  for (const id of ["settings-button", "net-badge"]) assert.equal(document.getElementById(id)!.style.visibility, "hidden", id);
+  assert.equal(document.getElementById("settings-button")!.hidden, true);
+  assert.equal(document.getElementById("net-badge")!.style.visibility, "hidden");
+  assert.equal(document.getElementById("brand-mark")!.hidden, false, "the mark stands alone instead");
 });
 
 test("wallet UI e2e: the account is renamed where its name is shown, and Escape keeps the old name", async () => {

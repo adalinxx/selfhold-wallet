@@ -8,13 +8,17 @@ import {
   NodeClient,
   NodeError,
   OPERATOR_DECLARED,
+  feeToOutbid,
   getJSON,
+  transactionWeight,
   type Fetch,
+  type FeeWeight,
+  type ProjectedBlock,
   type ResolvedEndpoint,
-} from "@adalinxx/lattice-client";
-import { HTTPTransactionSubmitter, SubmissionError, type SubmissionRefusal, type TransactionSubmitter } from "@adalinxx/lattice-relay";
-import { assertCID, decodeCanonicalBlock, decodeCanonicalLatticeState, decodeDagCbor, type DagCborValue } from "@adalinxx/lattice-core";
-import { HTTPVolumeTransport, VolumeClient, verifyVolume, type VerifiedVolume, type VolumeEntry } from "@adalinxx/lattice-volumes";
+} from "@adalin/lattice-client";
+import { HTTPTransactionSubmitter, SubmissionError, type SubmissionRefusal, type TransactionSubmitter } from "@adalin/lattice-relay";
+import { assertCID, buildTransfer, signedTransactionSize, stateGrowthCeiling, type TransactionBody, decodeCanonicalBlock, decodeCanonicalLatticeState, decodeDagCbor, type DagCborValue } from "@adalin/lattice-core";
+import { HTTPVolumeTransport, VolumeClient, verifyVolume, type VerifiedVolume, type VolumeEntry } from "@adalin/lattice-volumes";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ROOT_CHAIN } from "../config.ts";
 import type { SignedSubmit } from "./types.ts";
@@ -358,8 +362,11 @@ export { OPERATOR_DECLARED };
 
 const REFUSALS: Record<SubmissionRefusal, string> = {
   belowMinRelayFee: "the fee is below this node's minimum relay fee; raise the fee or use another node",
-  feeTooLow: "a transaction with this nonce is already pending; a replacement must pay a higher fee",
+  feeTooLow: "it conflicts with a pending transaction (the same nonce, name, deposit or receipt); a replacement must pay a higher fee, enough to be in the next block",
   conflictingNonce: "this nonce is taken by a conflicting pending transaction",
+  nonceAhead: "an earlier transaction from this account is still pending; send this once it is mined",
+  unavailable: "this node cannot check it yet; try again shortly",
+  insufficientFunds: "the account's balance is committed to pending transactions; try again once they are mined",
   invalidState: "the chain's current state rejects it (balance or nonce changed?)",
   tooLarge: "the transaction is too large for this node's pool",
   full: "this node's pool is full; try later or raise the fee",
@@ -396,7 +403,8 @@ export async function submitChecked(relay: TransactionSubmitter, signed: SignedS
 export function isDefiniteSubmissionRefusal(error: unknown): boolean {
   return error instanceof SubmissionError && error.status >= 400 && error.status < 500
     && error.status !== 401 && error.status !== 403 && error.status !== 408 && error.status !== 429
-    && ["belowMinRelayFee", "feeTooLow", "invalidState", "invalidSignature", "invalidTransaction"].includes(error.reason ?? "");
+    && ["belowMinRelayFee", "feeTooLow", "invalidState", "invalidSignature", "invalidTransaction",
+      "nonceAhead", "unavailable", "insufficientFunds"].includes(error.reason ?? "");
 }
 
 /** The node named the transaction itself as too big for it to take. */
@@ -413,7 +421,8 @@ export function shouldOfferFeeReplacement(error: unknown): boolean {
 
 export function isTransientSubmissionRefusal(error: unknown): boolean {
   return error instanceof SubmissionError && (error.status === 401 || error.status === 403 || error.status === 429
-    || error.reason === "full" || error.reason === "shuttingDown");
+    || error.reason === "full" || error.reason === "shuttingDown" || error.reason === "nonceAhead"
+    || error.reason === "unavailable" || error.reason === "insufficientFunds");
 }
 
 /** A browser permission failure, not an endpoint outage. */
@@ -461,6 +470,172 @@ function isWireMismatch(e: unknown): e is TypeError {
 export function feeWarning(fee: bigint, minRelayFee: bigint | undefined): string | undefined {
   if (minRelayFee === undefined || fee >= minRelayFee) return undefined;
   return `This node relays only fees of at least ${minRelayFee}; it will likely refuse a fee of ${fee}.`;
+}
+
+/** A fee that is at least half of what is sent: likely a slip, worth a second look. */
+export function highFeeWarning(fee: bigint, amount: bigint): string | undefined {
+  if (fee <= 0n || fee * 2n < amount) return undefined;
+  return `The fee is ${fee > amount ? "more than" : fee === amount ? "as much as" : "at least half of"} the amount you send. Check it before signing.`;
+}
+
+/**
+ * Where a same-nonce replacement's fee starts: a quarter more than the
+ * attempt it replaces, and at least what the pool requires, the node's floor
+ * more (at least 1). Miners rank by fee per weight, and a replacement weighs
+ * the same, so +1 on a large fee rarely moves it up.
+ */
+export function nextReplacementFee(previous: bigint, minRelayFee?: bigint): bigint {
+  const raised = previous + (previous / 4n > 1n ? previous / 4n : 1n);
+  const required = previous + replacementIncrement(minRelayFee);
+  return required > raised ? required : raised;
+}
+
+/** How much more a node asks the next block to pay for a replacement: its floor, and at least 1. */
+function replacementIncrement(minRelayFee?: bigint): bigint {
+  return minRelayFee !== undefined && minRelayFee > 1n ? minRelayFee : 1n;
+}
+
+/**
+ * A replacement's fee from a node's market. The node takes a replacement
+ * that is in the next block and makes it pay the node's floor more. With
+ * room, the next block holds the attempt it replaces, so the previous fee
+ * raised (`nextReplacementFee`) is enough. Full, the replacement pushes out
+ * the block's lowest: it outbids that (`automaticFee`) and pays the floor
+ * more besides, wherever the attempt it replaces sits.
+ */
+export function replacementFee(previous: bigint, market: FeeMarket, weight?: (fee: bigint) => number): bigint {
+  const raised = nextReplacementFee(previous, market.minRelayFee);
+  if (market.blocks?.[0]?.full !== true) return raised;
+  const entry = automaticFee(market, weight) + replacementIncrement(market.minRelayFee);
+  return entry > raised ? entry : raised;
+}
+
+/**
+ * What one node says about fees on one chain: its relay floor, the blocks its
+ * pool would fill next (absent from nodes older than `GET /api/fees`), what
+ * it weighs a transaction against (absent from older nodes, which rank by
+ * size), and the chain's target block time (milliseconds).
+ */
+export interface FeeMarket {
+  minRelayFee: bigint;
+  blocks?: readonly ProjectedBlock[];
+  weight?: FeeWeight;
+  blockTime?: bigint;
+}
+
+/**
+ * Reads a node's fee market. Chain info is required (it carries the floor
+ * every node reports); the projection and the spec are extras an older or
+ * partial node may lack.
+ */
+export async function readFeeMarket(node: NodeClient, signal?: AbortSignal): Promise<FeeMarket> {
+  const [info, fees, spec] = await Promise.all([
+    node.chainInfo(signal),
+    node.fees(signal).catch(() => undefined),
+    node.chainSpec(signal).catch(() => undefined),
+  ]);
+  return {
+    minRelayFee: fees?.minRelayFee ?? info.minRelayFee ?? 0n,
+    ...(fees && { blocks: fees.blocks }),
+    ...(fees?.weight && { weight: fees.weight }),
+    ...(spec && { blockTime: spec.targetBlockTime }),
+  };
+}
+
+/** A transaction of unknown shape, priced as if this large: a two-party transfer is about 600 bytes. */
+export const ESTIMATED_TRANSACTION_SIZE = 1_024;
+
+/** And as if it added this much state: a new payee and a first nonce, about 70 bytes each. */
+export const ESTIMATED_STATE_GROWTH = 160;
+
+/**
+ * What `market`'s node ranks `body` by, once signed: its weight
+ * (`transactionWeight`), which is its size unless state growth or the
+ * transaction count binds first. Fees are priced on it.
+ */
+export function weigh(market: FeeMarket | undefined, body: TransactionBody): number {
+  return transactionWeight(signedTransactionSize(body), stateGrowthCeiling(body), market?.weight);
+}
+
+/** The weight of a transaction of unknown shape (`ESTIMATED_TRANSACTION_SIZE`). */
+export function estimatedWeight(market: FeeMarket | undefined): number {
+  return transactionWeight(ESTIMATED_TRANSACTION_SIZE, ESTIMATED_STATE_GROWTH, market?.weight);
+}
+
+/**
+ * The bytes a transfer will take, for pricing. With no recipient or amount
+ * yet, a placeholder of the same shape: addresses have one length, and a
+ * larger amount only adds a byte or two.
+ */
+export function transferSize(args: TransferShape): number {
+  return signedTransactionSize(transferBody(args));
+}
+
+type TransferShape = { from: string; to?: string; amount?: bigint; fee: bigint; nonce?: bigint; chainPath: readonly string[] };
+
+/** The transfer `transferSize` measures, for weighing (`weigh`). */
+export function transferBody(args: TransferShape): TransactionBody {
+  const to = args.to && args.to !== args.from ? args.to : args.from.slice(0, -1) + (args.from.endsWith("a") ? "b" : "a");
+  return buildTransfer({
+    from: args.from, to, amount: args.amount && args.amount > 0n ? args.amount : 1_000_000_000n,
+    fee: args.fee, nonce: args.nonce ?? 1_000_000n, chainPath: args.chainPath,
+  });
+}
+
+/**
+ * The fees a transaction of `weight` (`weigh`) needs, from a node's market:
+ * `nextBlock` to be in the next block, `soon` within three, `minimum` the
+ * floor. `busy` when the next block has no room for a fee at the floor;
+ * `known` when the node projected its pool at all (older nodes do not, and
+ * then the floor is all there is to go on).
+ */
+export interface FeeChoice { minimum: bigint; nextBlock: bigint; soon: bigint; busy: boolean; known: boolean; waiting: number }
+
+export function feeChoice(market: FeeMarket, weight: number): FeeChoice {
+  const floor = market.minRelayFee;
+  const blocks = market.blocks ?? [];
+  // To be in block k, outbid block k's lowest rate if ready transactions are
+  // left after it; if it has room, the floor is enough.
+  const within = (k: number) => {
+    const block = blocks[k];
+    if (!block?.full) return floor;
+    const outbid = feeToOutbid(block, weight);
+    return outbid > floor ? outbid : floor;
+  };
+  return {
+    minimum: floor, nextBlock: within(0), soon: within(2),
+    busy: blocks[0]?.full === true, known: market.blocks !== undefined,
+    waiting: blocks.reduce((sum, block) => sum + block.transactionCount, 0),
+  };
+}
+
+/**
+ * The fee the wallet uses when the person has not chosen one: the next
+ * block's. On a chain with room, that is the node's floor.
+ * `weight` is that of the transaction paying a given fee (`weigh`): a larger
+ * fee can take a byte more, which needs a little more fee, so it is priced
+ * until the fee pays for its own weight. The fee only rises, and only by a
+ * few bytes' worth.
+ */
+export function automaticFee(market: FeeMarket, weight: (fee: bigint) => number = () => estimatedWeight(market)): bigint {
+  let fee = market.minRelayFee;
+  for (let pass = 0; pass < 8; pass += 1) {
+    const needed = feeChoice(market, weight(fee)).nextBlock;
+    if (needed <= fee) return fee;
+    fee = needed;
+  }
+  return fee;
+}
+
+/** A target block time as people say it: "about every hour", "about every 10 minutes". */
+export function blockCadence(milliseconds: bigint | undefined): string | undefined {
+  if (milliseconds === undefined || milliseconds <= 0n) return undefined;
+  const minutes = Number(milliseconds) / 60_000;
+  if (minutes < 1) return `about every ${Math.max(1, Math.round(minutes * 60))} seconds`;
+  const m = Math.round(minutes);
+  if (m < 60 || (m % 60 !== 0 && m < 180)) return m === 1 ? "about every minute" : `about every ${m} minutes`;
+  const hours = Math.round(m / 60);
+  return hours === 1 ? "about every hour" : `about every ${hours} hours`;
 }
 
 export type SentStatus =

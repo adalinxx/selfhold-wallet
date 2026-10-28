@@ -4,7 +4,7 @@
 
 import { deriveAccountFromSeed, importPrivateKey, type Account } from "../crypto/accounts.ts";
 import { mnemonicToSeedSync } from "@scure/bip39";
-import { buildTransfer, parseCID, signTransactionBody, signedTransactionCID, transactionPayload, type TransactionBody } from "@adalinxx/lattice-core";
+import { buildTransfer, parseCID, signTransactionBody, signedTransactionCID, transactionPayload, type TransactionBody } from "@adalin/lattice-core";
 import type { WalletData, AccountView, SignedSubmit } from "./types.ts";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
@@ -100,15 +100,72 @@ export function signDeposit(
   if (amountDeposited + fee > int64Max) throw new Error("deposited amount plus fee is too large");
   if (depositNonce < 0n || depositNonce > uint64Max) throw new Error("deposit nonce is out of range");
   if (chainPath.length < 2) throw new Error("deposits require a child chain");
-  const body: TransactionBody = {
-    accountActions: [{ owner: acct.address, delta: -(amountDeposited + fee) }],
+  return signBody(acct, depositBody(acct.address, args));
+}
+
+// The bodies the signers below sign, unchecked: also what a fee is priced
+// from (`signedTransactionSize`), before there is anything to sign.
+
+export function depositBody(
+  address: string,
+  args: { amountDeposited: bigint; amountDemanded: bigint; depositNonce: bigint; fee: bigint; nonce: bigint; chainPath: string[] },
+): TransactionBody {
+  const { amountDeposited, amountDemanded, depositNonce, fee, nonce, chainPath } = args;
+  return {
+    accountActions: [{ owner: address, delta: -(amountDeposited + fee) }],
     actions: [],
-    depositActions: [{ nonce: depositNonce, demander: acct.address, amountDemanded, amountDeposited }],
-    receiptActions: [], withdrawalActions: [], signers: [acct.address], nonce, chainPath,
+    depositActions: [{ nonce: depositNonce, demander: address, amountDemanded, amountDeposited }],
+    receiptActions: [], withdrawalActions: [], signers: [address], nonce, chainPath,
   };
-  const { bodyCID, publicKey, signature } = signTransactionBody(body, acct.privateKey);
-  const signatures = { [publicKey]: signature };
-  return { payload: transactionPayload(signatures, body), bodyCID, transactionCID: signedTransactionCID(signatures, body) };
+}
+
+export function receiptBody(
+  address: string,
+  args: { offers: SwapOffer[]; directory: string; fee: bigint; nonce: bigint; chainPath: string[] },
+): TransactionBody {
+  const { offers, directory, fee, nonce, chainPath } = args;
+  return {
+    accountActions: [{ owner: address, delta: -fee }],
+    actions: [], depositActions: [], withdrawalActions: [],
+    receiptActions: offers.map((offer) => ({
+      withdrawer: address, nonce: offer.depositNonce, demander: offer.demander,
+      amountDemanded: offer.amountDemanded, directory,
+    })),
+    signers: [address], nonce, chainPath,
+  };
+}
+
+export function withdrawalBody(
+  address: string,
+  args: { offers: SwapOffer[]; fee: bigint; nonce: bigint; chainPath: string[] },
+): TransactionBody {
+  const { offers, fee, nonce, chainPath } = args;
+  const deposited = offers.reduce((sum, offer) => sum + offer.amountDeposited, 0n);
+  return {
+    accountActions: [{ owner: address, delta: deposited - fee }],
+    actions: [], depositActions: [], receiptActions: [],
+    withdrawalActions: offers.map((offer) => ({
+      withdrawer: address, nonce: offer.depositNonce, demander: offer.demander,
+      amountDemanded: offer.amountDemanded, amountWithdrawn: offer.amountDeposited,
+    })),
+    signers: [address], nonce, chainPath,
+  };
+}
+
+export function recordsBody(
+  address: string,
+  args: { actions: { key: string; oldValue?: string; newValue?: string }[]; payments?: { to: string; amount: bigint }[]; fee: bigint; nonce: bigint; chainPath: string[] },
+): TransactionBody {
+  const { actions, payments = [], fee, nonce, chainPath } = args;
+  const debit = payments.reduce((sum, { amount }) => sum + amount, fee);
+  return {
+    accountActions: [
+      ...(debit > 0n ? [{ owner: address, delta: -debit }] : []),
+      ...payments.map(({ to, amount }) => ({ owner: to, delta: amount })),
+    ],
+    actions, depositActions: [], receiptActions: [], withdrawalActions: [],
+    signers: [address], nonce, chainPath,
+  };
 }
 
 export interface SwapOffer {
@@ -140,15 +197,7 @@ export function signReceipt(
   for (const offer of offers) {
     if (offer.amountDemanded <= 0n || offer.amountDeposited <= 0n) throw new Error("deposit amounts must be positive");
   }
-  return signBody(acct, {
-    accountActions: [{ owner: acct.address, delta: -fee }],
-    actions: [], depositActions: [], withdrawalActions: [],
-    receiptActions: offers.map((offer) => ({
-      withdrawer: acct.address, nonce: offer.depositNonce, demander: offer.demander,
-      amountDemanded: offer.amountDemanded, directory,
-    })),
-    signers: [acct.address], nonce, chainPath,
-  });
+  return signBody(acct, receiptBody(acct.address, args));
 }
 
 export function signWithdrawal(
@@ -163,15 +212,7 @@ export function signWithdrawal(
   const deposited = offers.reduce((sum, offer) => sum + offer.amountDeposited, 0n);
   if (deposited <= fee) throw new Error("deposit must exceed the withdrawal fee");
   if (deposited - fee > int64Max) throw new Error("withdrawal credit is too large");
-  return signBody(acct, {
-    accountActions: [{ owner: acct.address, delta: deposited - fee }],
-    actions: [], depositActions: [], receiptActions: [],
-    withdrawalActions: offers.map((offer) => ({
-      withdrawer: acct.address, nonce: offer.depositNonce, demander: offer.demander,
-      amountDemanded: offer.amountDemanded, amountWithdrawn: offer.amountDeposited,
-    })),
-    signers: [acct.address], nonce, chainPath,
-  });
+  return signBody(acct, withdrawalBody(acct.address, args));
 }
 
 /**
@@ -199,14 +240,7 @@ export function signRecords(
     debit += amount;
     if (debit > int64Max) throw new Error("the payments and fee together are too large");
   }
-  return signBody(acct, {
-    accountActions: [
-      ...(debit > 0n ? [{ owner: acct.address, delta: -debit }] : []),
-      ...payments.map(({ to, amount }) => ({ owner: to, delta: amount })),
-    ],
-    actions, depositActions: [], receiptActions: [], withdrawalActions: [],
-    signers: [acct.address], nonce, chainPath,
-  });
+  return signBody(acct, recordsBody(acct.address, args));
 }
 
 /** Sign a page's message (provider.ts `messageBytes`): never a transaction preimage. */

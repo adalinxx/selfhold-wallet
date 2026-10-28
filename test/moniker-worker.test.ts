@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { signedTransactionCID, type TransactionBody } from "@adalinxx/lattice-core";
+import { signedTransactionCID, type TransactionBody } from "@adalin/lattice-core";
 
 const MNEMONIC = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const prefix = "chrome-extension://wallet-id/";
@@ -17,7 +17,7 @@ test("a sent write setting the signer's own handle on Moniker names the account"
   const opened: string[] = [];
   const data: Record<string, unknown> = {};
   Object.defineProperty(globalThis, "chrome", { configurable: true, value: {
-    runtime: { id: "wallet-id", getURL: (path: string) => prefix + path, onMessage: { addListener: (fn: typeof listener) => { listener = fn; } }, sendMessage: async () => {} },
+    runtime: { id: "wallet-id", getURL: (path: string) => prefix + path, onMessage: { addListener: (fn: typeof listener) => { listener = fn; } }, onMessageExternal: { addListener: () => {} }, sendMessage: async () => {} },
     storage: { local: {
       get: async (key: string) => (key in data ? { [key]: structuredClone(data[key]) } : {}),
       set: async (items: Record<string, unknown>) => { Object.assign(data, structuredClone(items)); },

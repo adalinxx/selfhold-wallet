@@ -1,5 +1,7 @@
 # Selfhold identity
 
+How to use all of this, from the mark's sizes to icons, states and motion: [the guidebook](guidebook.md).
+
 Production reconstruction of the selected round-two **A** concept: the S with a negative-space key, circular bow and single tooth. The source concept was visually inspected before reconstruction; these are clean paths, not a cropped/generated raster. B and C are not used.
 
 - Master: `public/assets/selfhold-mark.svg`, 320-unit viewBox, no fonts, scripts or external references. Its ink follows the host light/dark preference.

@@ -8,7 +8,7 @@
 
 import { mnemonicToSeedSync, generateMnemonic, validateMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
-import { accountFromPrivateKey, hexToBytes } from "@adalinxx/lattice-core";
+import { accountFromPrivateKey, hexToBytes } from "@adalin/lattice-core";
 import { derivePrivateKey } from "./slip10.ts";
 
 export const COIN_TYPE = 7878; // FROZEN: changing it moves every HD account (test/accounts.test.ts)

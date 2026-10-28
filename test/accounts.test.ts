@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mnemonicToSeedSync } from "@scure/bip39";
-import { addressFromMultikey, addressFromPublicKey, bytesToHex, publicKeyFromPrivate } from "@adalinxx/lattice-core";
+import { addressFromMultikey, addressFromPublicKey, bytesToHex, publicKeyFromPrivate } from "@adalin/lattice-core";
 import { deriveAccount, importPrivateKey, isValidMnemonic, COIN_TYPE, path } from "../src/lib/crypto/accounts.ts";
 import { derivePrivateKey } from "../src/lib/crypto/slip10.ts";
 

@@ -7,11 +7,13 @@ import { createSigner } from "../lib/wallet/signer.ts";
 import type { Vault } from "../lib/crypto/keystore.ts";
 import type { Request, Response, SignedSubmit, WalletState } from "../lib/wallet/types.ts";
 import { browserFetch, describe, isDefiniteSubmissionRefusal, submitChecked, submitter } from "../lib/wallet/node.ts";
-import { isNonce, pageOrigin, parseProviderCall, type ProviderCall } from "../lib/wallet/provider.ts";
+import { isFee, isNonce, pageOrigin, parsePayments, parseProviderCall, type ProviderCall } from "../lib/wallet/provider.ts";
 import type { PageWrite } from "../lib/wallet/nonce.ts";
 import type { WriteRequest } from "../lib/wallet/provider.ts";
 import { decodeWriteRequest, fillWriteRequest } from "../lib/wallet/write-request.ts";
 import { handleLabel } from "../lib/wallet/moniker.ts";
+import { WEB_WALLET_ORIGIN } from "../lib/web-wallet.ts";
+import { memoryKeep, webAccounts, type Held } from "./web-account.ts";
 
 const AUTO_LOCK_MINUTES = 10;
 const store = chrome.storage.local;
@@ -200,7 +202,13 @@ async function decideNow(msg: { type: string; id?: string; approve?: boolean; ad
     }
     if (request.call.method !== "writeRecords") return { ok: false, error: "Unknown request" };
     from = request.address;
-    write = request.call.params;
+    // The page's fee, else the one the window showed: the person's default for
+    // the chain. A window never changes a fee the page asked for.
+    const fee = request.call.params.fee ?? msg.fee;
+    if (!isFee(fee)) return { ok: false, error: "The wallet has not chosen this write's fee" };
+    write = { ...request.call.params, fee };
+    const paid = parsePayments(write.payments ?? [], BigInt(fee));
+    if ("error" in paid) return { ok: false, error: paid.error };
   }
   // The nonce the window read from the person's node (nonce.ts); never the page's.
   if (!isNonce(msg.nonce) || !isNonce(msg.stateNonce) || typeof msg.node !== "string") {
@@ -281,6 +289,95 @@ chrome.windows.onRemoved.addListener((closed) => {
 
 const APPROVE_PAGE = chrome.runtime.getURL("approve/index.html");
 
+// An account Selfhold's window handed over, until the person adds it here
+// or not; kept in session memory, which outlasts the worker's idle stops.
+const offered = webAccounts(chrome.storage.session
+  ? { get: async () => ((await chrome.storage.session.get("webAccount")).webAccount as Held | undefined) ?? null, set: (held) => chrome.storage.session.set({ webAccount: held }) }
+  : memoryKeep());
+// Each step of a hand-over, one after another: an offer and its window, an
+// answer, a closed window. So two at once can't both pass a check before either acts.
+let handoff: Promise<unknown> = Promise.resolve();
+const inTurn = <T>(step: () => Promise<T>): Promise<T> => {
+  const done = handoff.then(step);
+  handoff = done.catch(() => {});
+  return done;
+};
+// The extension's window that asks about it, while it is open: one at a
+// time. Kept with the account, so the worker's idle stops don't lose it.
+const askingWindow = {
+  get: async () => (chrome.storage.session ? ((await chrome.storage.session.get("webAccountWindow")).webAccountWindow as number | undefined) : undefined),
+  set: async (id: number | undefined) => { await chrome.storage.session?.set({ webAccountWindow: id ?? null }); },
+};
+chrome.windows.onRemoved.addListener((closed) => {
+  void inTurn(async () => {
+    if (closed !== (await askingWindow.get())) return;
+    await askingWindow.set(undefined);
+    await offered.clear(); // closed without an answer: not now
+  });
+});
+async function askAboutWebAccount() {
+  const open = await askingWindow.get();
+  if (typeof open === "number") {
+    const shown = await chrome.windows.update(open, { focused: true }).then(() => true, () => false);
+    if (shown) return;
+  }
+  const opened = await chrome.windows.create({ url: chrome.runtime.getURL("popup/index.html?view=web-account"), type: "popup", width: 380, height: 600 });
+  await askingWindow.set(opened?.id);
+}
+
+/**
+ * Adds the account the window handed over, `address`, the one the person
+ * was shown: to this wallet, unlocked, or as a new wallet under `password`.
+ * Held until it is added, so a refusal can be put right and tried again.
+ */
+async function acceptWebAccount(address: unknown, password?: string): Promise<Response> {
+  const current = await signer.handle({ type: "getState" });
+  if (!current.ok) return current;
+  const state = (current as unknown as { state: WalletState }).state;
+  if (!state.initialized && (!password || password.length < 8)) return { ok: false, error: "Password must be at least 8 characters." };
+  if (state.initialized && state.locked) return { ok: false, error: "Locked" };
+  const account = typeof address === "string" ? await offered.peek(address) : null;
+  if (!account) return { ok: false, error: "Nothing to add now: hand it over again from Selfhold's window." };
+  // Named for where it came from; a second web account (another passkey) is numbered. Names are unique ignoring case.
+  const taken = new Set(state.accounts.map((a) => a.label.toLowerCase()));
+  let label = "Selfhold web";
+  for (let n = 2; taken.has(label.toLowerCase()); n++) label = `Selfhold web ${n}`;
+  let added: Response;
+  if (!state.initialized) {
+    added = await signer.handle({ type: "createWallet", password: password!, privHex: account.privHex });
+    // Made: the name is a nicety, and the wallet stands without it.
+    if (added.ok) {
+      const named = await signer.handle({ type: "renameAccount", address: account.address, label });
+      if (named.ok) added = named;
+    }
+  } else if (state.accounts.some((a) => a.address === account.address)) {
+    added = await signer.handle({ type: "setActive", address: account.address });
+  } else {
+    added = await signer.handle({ type: "importKey", privHex: account.privHex, label });
+  }
+  if (added.ok) await offered.clear();
+  return added;
+}
+
+// Selfhold's window, its own page only (the manifest's externally_connectable,
+// and the origin Chrome reports, checked again): whether this extension is
+// here, and an account to hold for the person to add or not.
+chrome.runtime.onMessageExternal.addListener((message: { type?: unknown; privHex?: unknown }, sender, sendResponse) => {
+  // A page, never another extension (the manifest admits none; checked again).
+  if (sender.id !== undefined || sender.origin !== WEB_WALLET_ORIGIN || pageOrigin(sender) !== WEB_WALLET_ORIGIN) return false;
+  if (message?.type === "webAccountHere") {
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message?.type !== "webAccount") return false;
+  inTurn(async () => {
+    const held = await offered.offer(message.privHex);
+    if (held.ok) await askAboutWebAccount().catch(() => {});
+    return held;
+  }).then(sendResponse, (e) => sendResponse({ ok: false, error: String(e?.message ?? e) }));
+  return true;
+});
+
 chrome.runtime.onMessage.addListener((message: { type?: unknown }, sender, sendResponse) => {
   const msg = message as Request;
   if (sender.id !== chrome.runtime.id) return false;
@@ -316,6 +413,14 @@ chrome.runtime.onMessage.addListener((message: { type?: unknown }, sender, sendR
     } catch (e) { answer = { ok: false, error: String((e as Error)?.message ?? e) }; }
     sendResponse(answer);
     return false;
+  }
+  if (msg.type === "webAccountPending" || msg.type === "webAccountDecline" || msg.type === "webAccountAccept") {
+    const answer = msg.type === "webAccountPending" ? offered.pending().then((address) => ({ ok: true, address }))
+      : msg.type === "webAccountDecline" ? inTurn(() => offered.clear()).then(() => ({ ok: true }))
+      : inTurn(() => acceptWebAccount(msg.address, msg.password));
+    if (msg.type === "webAccountAccept") chrome.alarms.create("auto-lock", { delayInMinutes: AUTO_LOCK_MINUTES });
+    answer.then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e?.message ?? e) }));
+    return true;
   }
   if (msg.type !== "getState" && msg.type !== "nodeAuthorization") chrome.alarms.create("auto-lock", { delayInMinutes: AUTO_LOCK_MINUTES });
   signer.handle(msg).then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e?.message ?? e) }));
