@@ -279,7 +279,7 @@ until a signed update**, and isolates the signer from any web page.
 ## Trustless transactions
 
 The wallet **builds, encodes and signs the transaction locally** with the
-[Lattice SDK](https://github.com/adalinxx/lattice-sdk)
+[Lattice SDK](https://github.com/0xLattice/lattice-sdk)
 (`@adalin/lattice-core`): canonical DAG-CBOR, the `bodyCID`, the
 `lattice-tx-v1` signing envelope, Ed25519 — it never trusts the node for *what
 it signs*. Signing runs only in the background worker. The SDK path is checked
@@ -304,7 +304,7 @@ submodule change.
 ## Design
 
 UI follows the Lattice design system
-([adalinxx/lattice-design](https://github.com/adalinxx/lattice-design)):
+([0xLattice/lattice-design](https://github.com/0xLattice/lattice-design)):
 monochrome, monospace, hairlines only, zero accent. Tokens are vendored in
 `public/assets/tokens.css`.
 

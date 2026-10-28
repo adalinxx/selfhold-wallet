@@ -1,5 +1,5 @@
 // End to end against LOCAL lattice-node processes this test starts and stops
-// (never a live chain). Build adalinxx/lattice-node main, then:
+// (never a live chain). Build 0xLattice/lattice-node main, then:
 //
 //   LATTICE_NODE_BIN=<lattice-node>/.build/debug node --test test/e2e-local.test.ts
 //
