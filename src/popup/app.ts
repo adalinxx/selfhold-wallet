@@ -2144,7 +2144,7 @@ async function webAccountScreen() {
   const add = async () => {
     const password = fields ? fields.get() : undefined;
     if (fields && password === null) return;
-    const r = await wallet.webAccountAccept(password ?? undefined);
+    const r = await wallet.webAccountAccept(address, password ?? undefined);
     if (!r.ok) { err.textContent = r.error; return; }
     st = r.state;
     render(h("div", { class: "stack" },
@@ -2157,6 +2157,7 @@ async function webAccountScreen() {
     h("h1", {}, "Add your Selfhold web account"),
     h("p", { class: "muted" }, "Selfhold's window (wallet.selfhold.app) handed over the account its passkey keeps. Added here, it is the same account in both: the same address, coins and names."),
     h("p", { class: "mono" }, address),
+    h("p", { class: "muted" }, "Check it is the address Selfhold's window shows. Add only an account you just handed over yourself."),
     ...(fields ? [h("p", { class: "muted" }, "First, a password for this extension's wallet."), fields.node] : []),
     err,
     h("button", { class: "block", onclick: add }, "Add account"),

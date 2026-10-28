@@ -21,8 +21,8 @@ export function walletClient(send: Send) {
     setActive: (address: string) => call<WithState>({ type: "setActive", address }),
     /** The address of the account Selfhold's window handed over, if one is waiting; never its key. */
     webAccountPending: () => call<{ address: string | null }>({ type: "webAccountPending" }),
-    /** Adds it: to this wallet, or as a new one under `password`. */
-    webAccountAccept: (password?: string) => call<WithState>({ type: "webAccountAccept", password }),
+    /** Adds it, `address`, the one the person was shown: to this wallet, or as a new one under `password`. */
+    webAccountAccept: (address: string, password?: string) => call<WithState>({ type: "webAccountAccept", address, password }),
     /** Forgets it. */
     webAccountDecline: () => call({ type: "webAccountDecline" }),
     /** Name an account; an empty name gives it back its default. */

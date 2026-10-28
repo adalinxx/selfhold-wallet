@@ -19,7 +19,7 @@ import { el, fmt, fullAddress, label, named, notice, row, site, valueNode, visib
 import { RP_ID, create, forget, saved, signIn, unlock, type Unlocked } from "./account.ts";
 import { CHANNEL, parseCall, type SiteRoute, type WindowCall } from "./protocol.ts";
 import { NeedsCoins, quote, send, type Progress, type Quote, type Route } from "./send.ts";
-import { HANDOFF_CHANNEL } from "../lib/web-wallet.ts";
+import { EXTENSION_ID } from "../lib/web-wallet.ts";
 import { Stopped, workDevice } from "./sponsor.ts";
 
 type Answer = { ok: boolean; error?: string; [key: string]: unknown };
@@ -399,36 +399,34 @@ function home() {
 
 // ---------------------------------------------------------------- to Selfhold for Chrome
 
+type Runtime = { sendMessage(id: string, message: object, reply: (answer: unknown) => void): void; lastError?: unknown };
+type Answered = { ok: boolean; error?: string; address?: string };
+
 /**
- * Asks Selfhold for Chrome's content script, on this page and only here,
- * whether it is installed and can take this account; it answers within a moment.
+ * Says `message` to Selfhold for Chrome, by Chrome's own messaging, which
+ * reaches that extension alone and which no other script on this page can
+ * read; its answer, or null where it isn't installed or didn't answer.
  */
-function extensionHere(): Promise<boolean> {
+function toExtension(message: object, ms: number): Promise<Answered | null> {
+  const runtime = (globalThis as { chrome?: { runtime?: Runtime } }).chrome?.runtime;
+  if (typeof runtime?.sendMessage !== "function") return Promise.resolve(null);
   return new Promise((resolve) => {
-    const heard = (event: MessageEvent) => {
-      if (event.source !== window || event.data?.channel !== HANDOFF_CHANNEL || event.data.here !== true) return;
-      done(true);
-    };
-    const done = (here: boolean) => { window.removeEventListener("message", heard); clearTimeout(timer); resolve(here); };
-    const timer = setTimeout(() => done(false), 800);
-    window.addEventListener("message", heard);
-    window.postMessage({ channel: HANDOFF_CHANNEL, ask: "here" }, location.origin);
+    const timer = setTimeout(() => resolve(null), ms);
+    try {
+      runtime.sendMessage(EXTENSION_ID, message, (answer) => {
+        clearTimeout(timer);
+        void runtime.lastError; // not installed: read, so Chrome doesn't log it
+        resolve(answer && typeof answer === "object" ? (answer as Answered) : null);
+      });
+    } catch {
+      clearTimeout(timer);
+      resolve(null);
+    }
   });
 }
 
-/** Hands `hex`, the account's key, to Selfhold for Chrome on this page; its answer. */
-function handOver(hex: string): Promise<{ ok: boolean; error?: string }> {
-  return new Promise((resolve) => {
-    const heard = (event: MessageEvent) => {
-      if (event.source !== window || event.data?.channel !== HANDOFF_CHANNEL || typeof event.data.answer !== "object") return;
-      done(event.data.answer ?? { ok: false });
-    };
-    const done = (answer: { ok: boolean; error?: string }) => { window.removeEventListener("message", heard); clearTimeout(timer); resolve(answer); };
-    const timer = setTimeout(() => done({ ok: false, error: "Selfhold for Chrome didn't answer" }), 10_000);
-    window.addEventListener("message", heard);
-    window.postMessage({ channel: HANDOFF_CHANNEL, account: hex }, location.origin);
-  });
-}
+/** Whether Selfhold for Chrome is installed and takes this page's account. */
+const extensionHere = async () => (await toExtension({ type: "webAccountHere" }, 1500))?.ok === true;
 
 /**
  * The account, into Selfhold for Chrome too: the passkey gives the key, this
@@ -447,9 +445,9 @@ function addToExtension(address: string) {
       const { key } = await unlock(address);
       const hex = Array.from(key, (b) => b.toString(16).padStart(2, "0")).join("");
       key.fill(0);
-      const answer = await handOver(hex);
-      if (!answer.ok) throw new Error(answer.error ?? "Selfhold for Chrome didn't take it");
-      status.textContent = "Selfhold for Chrome asks you, in its own window, to add it.";
+      const answer = await toExtension({ type: "webAccount", privHex: hex }, 10_000);
+      if (!answer?.ok) throw new Error(answer?.error ?? "Selfhold for Chrome didn't answer");
+      status.textContent = `Selfhold for Chrome asks you, in its own window, to add ${shortAddress(address)}.`;
     } catch (error) {
       status.className = "warn";
       status.textContent = message(error);

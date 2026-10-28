@@ -312,16 +312,18 @@ passkey: a new account could only be refused.
 **One account in both.** Each Selfhold keeps its own accounts, so the
 window's account can be added to Selfhold for Chrome: the extension's account
 menu has "+ Selfhold web account", which opens the window, and the window's
-home has "Add to Selfhold for Chrome" when the extension is installed. The
-passkey gives the key; the window hands it to the extension's content script
-on `wallet.selfhold.app`'s own page, and nowhere else
-(`src/lib/web-wallet.ts`); the worker takes it only from that origin, as
-Chrome reports it, holds it for two minutes without storing it, and opens its
-own window, which shows the address and asks before adding it as an account
-named "Selfhold web" (or, with no wallet yet, makes one under a new password).
-Then the same address, coins and names are in both. Whoever controls
-`wallet.selfhold.app` could hand the extension an account of their own: the
-extension's window says which account it adds, and adds nothing unasked.
+home has "Add to Selfhold for Chrome" when the extension answers there. The
+passkey gives the key, and the window hands it to the extension by Chrome's
+own messaging (`externally_connectable`, `wallet.selfhold.app` only), which
+reaches that extension alone and which no other script or extension on the
+page can read. The worker takes it only from that origin, as Chrome reports
+it; holds one account at a time, for two minutes, in session memory; and
+opens its own window, which shows the address and adds that account, and no
+other, when the person says so: as an account named "Selfhold web", or, with
+no wallet yet, as a new wallet under a new password. Closing it, or Not now,
+forgets it. Whoever controls `wallet.selfhold.app` could hand the extension
+an account of their own: the extension's window says which account it adds,
+to compare with the window's, and adds nothing unasked.
 
 It is the easier Selfhold, not the safer one: see the next section. Whoever
 controls `wallet.selfhold.app`'s code (its host, its DNS, this repository's

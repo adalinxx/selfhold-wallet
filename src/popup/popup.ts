@@ -45,6 +45,6 @@ startWallet({
   camera: fullPage,
   writeRequests: true,
   initialView: view === "backup" || view === "restore" || view === "web-account" ? view : undefined,
-  openWebWallet: () => { chrome.tabs.create({ url: `${WEB_WALLET_URL}#to-extension` }); window.close(); },
+  openWebWallet: () => { chrome.tabs.create({ url: WEB_WALLET_URL }); window.close(); },
   openFullPage: (v) => { chrome.tabs.create({ url: chrome.runtime.getURL(`popup/index.html?view=${v}`) }); window.close(); },
 });

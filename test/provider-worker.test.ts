@@ -22,7 +22,7 @@ test("pages connect and write only through the person's approval", async () => {
   const opened: string[] = [];
   const data: Record<string, unknown> = {};
   Object.defineProperty(globalThis, "chrome", { configurable: true, value: {
-    runtime: { id: "wallet-id", getURL: (path: string) => prefix + path, onMessage: { addListener: (fn: typeof listener) => { listener = fn; } }, sendMessage: async () => {} },
+    runtime: { id: "wallet-id", getURL: (path: string) => prefix + path, onMessage: { addListener: (fn: typeof listener) => { listener = fn; } }, onMessageExternal: { addListener: () => {} }, sendMessage: async () => {} },
     storage: { local: {
       get: async (key: string) => (key in data ? { [key]: structuredClone(data[key]) } : {}),
       set: async (items: Record<string, unknown>) => { Object.assign(data, structuredClone(items)); },
@@ -30,7 +30,7 @@ test("pages connect and write only through the person's approval", async () => {
     } },
     tabs: { sendMessage: async (_tab: number, _message: object, target: { documentId: string }) => documentAlive && target.documentId === "doc-1" ? { origin: "https://stoa.example" } : Promise.reject(new Error("Document gone")) },
     alarms: { create: () => {}, onAlarm: { addListener: () => {} } },
-    windows: { create: async ({ url }: { url: string }) => { opened.push(url); return { id: opened.length }; }, onRemoved: { addListener: (fn: typeof onWindowClosed) => { onWindowClosed = fn; } } },
+    windows: { create: async ({ url }: { url: string }) => { opened.push(url); return { id: opened.length }; }, onRemoved: { addListener: (fn: typeof onWindowClosed) => { const before = onWindowClosed; onWindowClosed = (id) => { before?.(id); fn(id); }; } } },
   } });
   // The node the window read the nonce from: it takes what it is sent, or
   // refuses it when `refuse` is set.

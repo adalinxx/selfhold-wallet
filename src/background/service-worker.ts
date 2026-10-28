@@ -12,7 +12,7 @@ import type { PageWrite } from "../lib/wallet/nonce.ts";
 import type { WriteRequest } from "../lib/wallet/provider.ts";
 import { decodeWriteRequest, fillWriteRequest } from "../lib/wallet/write-request.ts";
 import { WEB_WALLET_ORIGIN } from "../lib/web-wallet.ts";
-import { webAccounts } from "./web-account.ts";
+import { memoryKeep, webAccounts, type Held } from "./web-account.ts";
 
 const AUTO_LOCK_MINUTES = 10;
 const store = chrome.storage.local;
@@ -277,49 +277,82 @@ chrome.windows.onRemoved.addListener((closed) => {
 
 const APPROVE_PAGE = chrome.runtime.getURL("approve/index.html");
 
-// An account Selfhold's window handed over, until the person adds it here or not.
-const offered = webAccounts();
+// An account Selfhold's window handed over, until the person adds it here
+// or not; kept in session memory, which outlasts the worker's idle stops.
+const offered = webAccounts(chrome.storage.session
+  ? { get: async () => ((await chrome.storage.session.get("webAccount")).webAccount as Held | undefined) ?? null, set: (held) => chrome.storage.session.set({ webAccount: held }) }
+  : memoryKeep());
+// The extension's window that asks about it, while it is open: one at a time.
+let webAccountWindow: number | undefined;
+chrome.windows.onRemoved.addListener((closed) => {
+  if (closed !== webAccountWindow) return;
+  webAccountWindow = undefined;
+  void offered.clear(); // closed without an answer: not now
+});
+async function askAboutWebAccount() {
+  if (webAccountWindow !== undefined) {
+    const shown = await chrome.windows.update(webAccountWindow, { focused: true }).then(() => true, () => false);
+    if (shown) return;
+  }
+  const opened = await chrome.windows.create({ url: chrome.runtime.getURL("popup/index.html?view=web-account"), type: "popup", width: 380, height: 600 });
+  webAccountWindow = opened?.id;
+}
 
 /**
- * Adds the account the window handed over: to this wallet, unlocked, or as
- * a new wallet under `password`. Held until then, so a refusal for a short
- * password or a locked wallet can be put right.
+ * Adds the account the window handed over, `address`, the one the person
+ * was shown: to this wallet, unlocked, or as a new wallet under `password`.
+ * Held until it is added, so a refusal can be put right and tried again.
  */
-async function acceptWebAccount(password?: string): Promise<Response> {
+async function acceptWebAccount(address: unknown, password?: string): Promise<Response> {
   const current = await signer.handle({ type: "getState" });
   if (!current.ok) return current;
   const state = (current as unknown as { state: WalletState }).state;
   if (!state.initialized && (!password || password.length < 8)) return { ok: false, error: "Password must be at least 8 characters." };
   if (state.initialized && state.locked) return { ok: false, error: "Locked" };
-  const account = offered.take();
+  const account = typeof address === "string" ? await offered.peek(address) : null;
   if (!account) return { ok: false, error: "Nothing to add now: hand it over again from Selfhold's window." };
-  // Named for where it came from; a second web account (another passkey) is numbered.
-  const taken = new Set(state.accounts.map((a) => a.label));
+  // Named for where it came from; a second web account (another passkey) is numbered. Names are unique ignoring case.
+  const taken = new Set(state.accounts.map((a) => a.label.toLowerCase()));
   let label = "Selfhold web";
-  for (let n = 2; taken.has(label); n++) label = `Selfhold web ${n}`;
+  for (let n = 2; taken.has(label.toLowerCase()); n++) label = `Selfhold web ${n}`;
+  let added: Response;
   if (!state.initialized) {
-    const made = await signer.handle({ type: "createWallet", password: password!, privHex: account.privHex });
-    return made.ok ? signer.handle({ type: "renameAccount", address: account.address, label }) : made;
+    added = await signer.handle({ type: "createWallet", password: password!, privHex: account.privHex });
+    // Made: the name is a nicety, and the wallet stands without it.
+    if (added.ok) {
+      const named = await signer.handle({ type: "renameAccount", address: account.address, label });
+      if (named.ok) added = named;
+    }
+  } else if (state.accounts.some((a) => a.address === account.address)) {
+    added = await signer.handle({ type: "setActive", address: account.address });
+  } else {
+    added = await signer.handle({ type: "importKey", privHex: account.privHex, label });
   }
-  if (state.accounts.some((a) => a.address === account.address)) return signer.handle({ type: "setActive", address: account.address });
-  return signer.handle({ type: "importKey", privHex: account.privHex, label });
+  if (added.ok) await offered.clear();
+  return added;
 }
+
+// Selfhold's window, its own page only (the manifest's externally_connectable,
+// and the origin Chrome reports, checked again): whether this extension is
+// here, and an account to hold for the person to add or not.
+chrome.runtime.onMessageExternal.addListener((message: { type?: unknown; privHex?: unknown }, sender, sendResponse) => {
+  if (sender.origin !== WEB_WALLET_ORIGIN || pageOrigin(sender) !== WEB_WALLET_ORIGIN) return false;
+  if (message?.type === "webAccountHere") {
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message?.type !== "webAccount") return false;
+  offered.offer(message.privHex).then(async (held) => {
+    if (held.ok) await askAboutWebAccount().catch(() => {});
+    sendResponse(held);
+  });
+  return true;
+});
 
 chrome.runtime.onMessage.addListener((message: { type?: unknown }, sender, sendResponse) => {
   const msg = message as Request;
   if (sender.id !== chrome.runtime.id) return false;
   const page = sender.url?.split(/[?#]/, 1)[0];
-  if (message?.type === "webAccount" && page !== APPROVE_PAGE && page !== chrome.runtime.getURL("popup/index.html")) {
-    // From Selfhold's window only, by the origin Chrome reports: held, and
-    // shown in the extension's own window for the person to add or not.
-    if (pageOrigin(sender) !== WEB_WALLET_ORIGIN) return false;
-    const held = offered.offer((message as { privHex?: unknown }).privHex);
-    if (held.ok) {
-      chrome.windows.create({ url: chrome.runtime.getURL("popup/index.html?view=web-account"), type: "popup", width: 380, height: 600 }).catch(() => {});
-    }
-    sendResponse(held);
-    return false;
-  }
   if (message?.type === "provider" && page !== APPROVE_PAGE && page !== chrome.runtime.getURL("popup/index.html")) {
     const origin = pageOrigin(sender);
     if (!origin || typeof sender.tab?.id !== "number" || !sender.documentId) return false;
@@ -350,13 +383,12 @@ chrome.runtime.onMessage.addListener((message: { type?: unknown }, sender, sendR
     sendResponse(answer);
     return false;
   }
-  if (msg.type === "webAccountPending" || msg.type === "webAccountDecline") {
-    if (msg.type === "webAccountDecline") offered.take();
-    sendResponse({ ok: true, address: msg.type === "webAccountPending" ? offered.pending() : null });
-    return false;
-  }
-  if (msg.type === "webAccountAccept") {
-    acceptWebAccount(msg.password).then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e?.message ?? e) }));
+  if (msg.type === "webAccountPending" || msg.type === "webAccountDecline" || msg.type === "webAccountAccept") {
+    const answer = msg.type === "webAccountPending" ? offered.pending().then((address) => ({ ok: true, address }))
+      : msg.type === "webAccountDecline" ? offered.clear().then(() => ({ ok: true }))
+      : acceptWebAccount(msg.address, msg.password);
+    if (msg.type === "webAccountAccept") chrome.alarms.create("auto-lock", { delayInMinutes: AUTO_LOCK_MINUTES });
+    answer.then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e?.message ?? e) }));
     return true;
   }
   if (msg.type !== "getState" && msg.type !== "nodeAuthorization") chrome.alarms.create("auto-lock", { delayInMinutes: AUTO_LOCK_MINUTES });
