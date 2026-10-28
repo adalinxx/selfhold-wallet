@@ -52,9 +52,15 @@ export function selfhold(options: Options = {}) {
   const remember = (address: unknown) => {
     try { if (typeof address === "string") localStorage.setItem(key, address); } catch {}
   };
+  const given = () => {
+    try { return localStorage.getItem(key); } catch { return null; }
+  };
+  const forget = () => {
+    try { localStorage.removeItem(key); } catch {}
+  };
 
   /** Opens the window with `call` (or what it resolves to; null closes the window), resolving with its answer. */
-  function ask(call: object | Promise<object | null>, progress: (text: string) => void = () => {}, route = false): Promise<Answer> {
+  function ask(call: object | Promise<object | null>, progress: (text: string) => void = () => {}, route = false, account?: string): Promise<Answer> {
     // A request that fails after the window is gone is answered by the window's closing.
     if (call instanceof Promise) call.catch(() => {});
     const id = crypto.randomUUID();
@@ -92,7 +98,7 @@ export function selfhold(options: Options = {}) {
             const sponsor = route && options.sponsor ? await options.sponsor() : undefined;
             // Answered meanwhile (reloaded, or closed): the call is never sent.
             if (settled) return;
-            opened.postMessage({ channel: CHANNEL, id, call: asked, ...(route ? { route: { ...(hosts && { hosts }), ...(sponsor && { sponsor }) } } : {}) }, wallet.origin);
+            opened.postMessage({ channel: CHANNEL, id, call: asked, ...(route ? { route: { ...(hosts && { hosts }), ...(sponsor && { sponsor }) } } : {}), ...(account && { account }) }, wallet.origin);
           } catch (error) {
             opened.close();
             return finish({ ok: false, error: String((error as Error)?.message ?? error) });
@@ -109,6 +115,8 @@ export function selfhold(options: Options = {}) {
 
   const answered = (answer: Answer): Answer => {
     if (answer.ok) return answer;
+    // The window's account isn't the one given here: forgotten, so the site asks to connect again.
+    if (answer.code === "AccountChanged") forget();
     if (answer.code === "NeedsCoins") {
       throw new NeedsCoins(answer.error ?? "", answer.address as string, BigInt(answer.needed as string), BigInt(answer.balance as string), (answer.sponsor as string | null) ?? null);
     }
@@ -118,9 +126,7 @@ export function selfhold(options: Options = {}) {
   return Object.freeze({
     isSelfholdWeb: true,
     /** The address this site was given, or null; never asks. */
-    address: async (): Promise<string | null> => {
-      try { return localStorage.getItem(key); } catch { return null; }
-    },
+    address: async (): Promise<string | null> => given(),
     /** The person's address, once they connect in Selfhold's window. Call it from a click. */
     connect: async (): Promise<string> => {
       const { address } = answered(await ask({ method: "connect" }));
@@ -128,26 +134,25 @@ export function selfhold(options: Options = {}) {
       return address as string;
     },
     /** Forget the address here. */
-    disconnect: async () => {
-      try { localStorage.removeItem(key); } catch {}
-    },
+    disconnect: async () => forget(),
     /**
      * Write records on one chain, and pay addresses from the account in the
      * same transaction, once the person approves in Selfhold's window, which
      * signs and sends it. `progress(text)` hears what the window is doing.
      * `request` may be a promise; resolving to null closes the window, and
-     * the write resolves to null: nothing to send.
+     * the write resolves to null: nothing to send. Built for the address
+     * given here, the window signs it only as that account.
      */
     writeRecords: async (request: WriteRequest | Promise<WriteRequest | null>, { progress }: { progress?: (text: string) => void } = {}): Promise<{ transactionCID: string } | null> => {
       const call = Promise.resolve(request).then((params) => (params === null ? null : { method: "writeRecords", params }));
-      const answer = answered(await ask(call, progress, true));
+      const answer = answered(await ask(call, progress, true, given() ?? undefined));
       if (answer.nothing) return null;
       remember(answer.address);
       return { transactionCID: answer.transactionCID as string };
     },
-    /** Sign `text`, once the person approves. The signed bytes are "lattice-message:" + this origin + "\n" + text. */
+    /** Sign `text`, once the person approves, as the address given here if any. The signed bytes are "lattice-message:" + this origin + "\n" + text. */
     signMessage: async (params: { text: string }) => {
-      const { publicKey, signature } = answered(await ask({ method: "signMessage", params }));
+      const { publicKey, signature } = answered(await ask({ method: "signMessage", params }, undefined, false, given() ?? undefined));
       return { publicKey: publicKey as string, signature: signature as string };
     },
   });

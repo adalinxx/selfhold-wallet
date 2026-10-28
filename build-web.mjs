@@ -16,27 +16,20 @@ cpSync("src/approve/approve.css", `${outdir}/approve.css`);
 cpSync("src/web/web.css", `${outdir}/web.css`);
 // The domain itself is set in the repository's Pages settings: an Actions deploy reads no CNAME file.
 
-const ctx = await esbuild.context({
-  entryPoints: {
-    wallet: "src/web/wallet.ts",
-    "work/worker": "src/web/work/worker.ts",
-    selfhold: "src/web/client.ts",
-  },
-  outdir,
-  bundle: true,
-  format: "esm",
-  target: "es2022",
-  platform: "browser",
-  legalComments: "none",
-  minify: !watch,
-  sourcemap: watch,
-});
+const options = { outdir, bundle: true, format: "esm", target: "es2022", platform: "browser", legalComments: "none", sourcemap: watch };
+const contexts = [
+  await esbuild.context({ ...options, entryPoints: { wallet: "src/web/wallet.ts", "work/worker": "src/web/work/worker.ts" }, minify: !watch }),
+  // What a site loads and vendors: small, and kept readable, so it can see what it runs.
+  await esbuild.context({ ...options, entryPoints: { selfhold: "src/web/client.ts" } }),
+];
 
 if (watch) {
-  await ctx.watch();
+  for (const ctx of contexts) await ctx.watch();
   console.log("watching…");
 } else {
-  await ctx.rebuild();
-  await ctx.dispose();
+  for (const ctx of contexts) {
+    await ctx.rebuild();
+    await ctx.dispose();
+  }
   console.log("built -> dist-web/");
 }

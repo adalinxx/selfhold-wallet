@@ -80,8 +80,8 @@ function serve(opener: Window, id: string) {
     if (!/^https:\/\//.test(event.origin) && !(local && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(event.origin))) return;
     origin = event.origin;
     if ("error" in parsed) return answer({ ok: false, error: parsed.error });
-    const { call, route } = parsed;
-    handle(call, origin, route, { answer, decline, progress: (text) => reply({ progress: text }) })
+    const { call, route, account } = parsed;
+    handle(call, origin, route, account, { answer, decline, progress: (text) => reply({ progress: text }) })
       .catch((error) => { show(el("p", { className: "warn", textContent: `${message(error)}. Nothing was signed.` }), button("Close", () => answer({ ok: false, error: message(error) }))); });
   });
   opener.postMessage({ channel: CHANNEL, id, ready: true }, "*");
@@ -90,15 +90,20 @@ function serve(opener: Window, id: string) {
 
 interface Replies { answer: (response: Answer, close?: boolean) => void; decline: () => void; progress: (text: string) => void }
 
-async function handle(call: WindowCall, origin: string, route: SiteRoute, replies: Replies) {
-  const account = saved() ?? await setUp(origin, call.method === "connect" ? "connect" : "approve");
+async function handle(call: WindowCall, origin: string, route: SiteRoute, expected: string | undefined, replies: Replies) {
+  // A call for the account the site was given finds that account, or none: a new one could only be refused.
+  const account = saved() ?? await setUp(origin, call.method === "connect" ? "connect" : "approve", expected === undefined);
+  // A write is built for that account, and a signature vouches for it: by another, either would say something else.
+  if (call.method !== "connect" && expected !== undefined && expected !== account.address) {
+    return replies.answer({ ok: false, code: "AccountChanged", error: "Selfhold uses another account in this browser now. Nothing was signed: connect again." });
+  }
   if (call.method === "connect") return connect(origin, account.address, replies);
   if (call.method === "signMessage") return sign(origin, account.address, call.params.text, replies);
   return review(origin, account.address, call.params, route, replies);
 }
 
-/** A first account, made or found with a passkey, for `origin`'s request. */
-function setUp(origin: string, purpose: "connect" | "approve"): Promise<{ address: string }> {
+/** A first account, made (where `canCreate`) or found with a passkey, for `origin`'s request. */
+function setUp(origin: string, purpose: "connect" | "approve", canCreate = true): Promise<{ address: string }> {
   return new Promise((resolve) => {
     const status = el("p", { className: "warn", role: "status" });
     const run = (how: () => Promise<Unlocked>) => () => {
@@ -109,8 +114,8 @@ function setUp(origin: string, purpose: "connect" | "approve"): Promise<{ addres
       el("h1", { textContent: purpose === "connect" ? "Connect" : "Sign in" }),
       el("p", {}, site(origin), " asks for your Selfhold account."),
       say("Selfhold keeps your account in a passkey on this device: nothing to install, and the same account on every site that uses Selfhold."),
-      button("Create an account", run(create), true),
-      button("I have a Selfhold passkey", run(signIn)),
+      ...(canCreate ? [button("Create an account", run(create), true)] : []),
+      button("I have a Selfhold passkey", run(signIn), !canCreate),
       status,
     );
   });
