@@ -198,9 +198,9 @@ async function review(origin: string, address: string, write: PageWriteRequest, 
   const feeFromCoins = !quoted.sponsored || quoted.covered;
   const dear = feeFromCoins && quoted.fee > 0n && (quoted.paying > 0n ? quoted.fee * 2n >= quoted.paying : quoted.fee * 4n >= quoted.balance);
   const summary = el("section", { className: "balance-card summary" },
-    label(atMost === 0n ? "No coins move" : "You pay"),
-    ...(atMost > 0n ? [el("span", { className: "balance-value", textContent: fmt(fromCoins) })] : []),
-    ...(atMost > fromCoins ? [say(`${fmt(atMost)} if the work can't be done: the fee then comes from your coins.`)] : []),
+    label(fromCoins === 0n ? "No coins move" : "You pay"),
+    ...(fromCoins > 0n ? [el("span", { className: "balance-value", textContent: fmt(fromCoins) })] : []),
+    ...(atMost > fromCoins ? [say(`${fromCoins === 0n ? "Unless" : `${fmt(atMost)} in all if`} the work can't be done${fromCoins === 0n ? `: then the ${fmt(quoted.fee)} fee comes from your coins` : ": the fee then comes from your coins"}.`)] : []),
     el("p", { className: "meta", textContent: `on ${chain} · you hold ${fmt(quoted.balance)}` }),
     ...(dear ? [notice("warning", `The network fee is ${fmt(quoted.fee)} of your ${fmt(quoted.balance)} coins${quoted.paying > 0n ? `, against ${fmt(quoted.paying)} paid` : ""}. Check it before you approve.`)] : []),
     ...(quoted.short > 0n && quoted.sponsored ? [say(`The fee sponsor pays the ${fmt(quoted.short)} you're short, for more work.`)] : []),
@@ -291,6 +291,7 @@ const rate = (perMs: number) => (perMs >= 1000 ? `${(perMs / 1000).toFixed(1)} m
 /** A step, as the site hears it. */
 function words(step: Progress): string {
   switch (step.stage) {
+    case "queued": return "Waiting for another Selfhold window to finish…";
     case "work": return "Getting work from the fee sponsor…";
     case "busy": return "The fee sponsor is busy; trying again in a moment…";
     case "grind": return `Paying the fee with this device's ${step.device}${step.left && step.left >= 1000 ? `, ${about(step.left).toLowerCase()}` : ""}…`;
@@ -307,8 +308,9 @@ function words(step: Progress): string {
  */
 function working(quoted: Quote, route: Route, device: string | null, stop: () => void) {
   if (!quoted.sponsored) {
-    show(el("h1", { textContent: "Sending" }), say("Your passkey signed it. This takes a moment."));
-    return { update: () => {} };
+    const note = say("Your passkey signed it. This takes a moment.");
+    show(el("h1", { textContent: "Sending" }), note);
+    return { update: (step: Progress) => { note.textContent = step.stage === "queued" ? "Waiting for another Selfhold window to finish sending…" : "Your passkey signed it. This takes a moment."; } };
   }
   const bar = el("div", { className: "work-bar", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: "0", ariaLabel: "Work done" }, el("span"));
   const fill = bar.firstChild as HTMLElement;
@@ -337,6 +339,7 @@ function working(quoted: Quote, route: Route, device: string | null, stop: () =>
       if (index >= 0) at = Math.max(at, index);
       steps.forEach((item, i) => (item.className = i < at ? "done" : i === at ? "now" : ""));
       if (step.stage === "busy") left.textContent = "The fee sponsor is busy. Trying again in a moment…";
+      if (step.stage === "queued") left.textContent = "Waiting for another Selfhold window to finish sending…";
       if (step.stage === "grind") {
         const done = Math.round((step.done ?? 0) * 100);
         fill.style.width = `${done}%`;

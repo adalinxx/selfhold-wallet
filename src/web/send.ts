@@ -104,9 +104,22 @@ function rememberSent(key: string, next: bigint) {
   } catch {}
 }
 
-/** `run`, while no other Selfhold window in this browser sends: two would take the same nonce. */
-const oneAtATime = <T>(run: () => Promise<T>): Promise<T> =>
-  navigator.locks ? navigator.locks.request("selfhold.send", run) as Promise<T> : run();
+/**
+ * `run`, while no other Selfhold window in this browser sends: two would take
+ * the same nonce. `waiting()` hears that another holds it; Stop still stops.
+ */
+async function oneAtATime<T>(run: () => Promise<T>, waiting: () => void, signal?: AbortSignal): Promise<T> {
+  if (!navigator.locks) return run();
+  const now = await navigator.locks.request("selfhold.send", { ifAvailable: true }, async (lock) => (lock ? { done: await run() } : null));
+  if (now) return now.done;
+  waiting();
+  try {
+    return await navigator.locks.request("selfhold.send", { signal }, run) as T;
+  } catch (error) {
+    if (signal?.aborted) throw new Stopped();
+    throw error;
+  }
+}
 
 /**
  * Signs `write` with `key` and sends it as `quoted` said, returning its CID.
@@ -115,7 +128,7 @@ const oneAtATime = <T>(run: () => Promise<T>): Promise<T> =>
  * Once sent, a write is never sent again; once stopped, nothing is sent.
  */
 export function send(write: PageWriteRequest, owner: string, key: Uint8Array, route: Route, quoted: Quote, progress: (step: Progress) => void, signal?: AbortSignal): Promise<string> {
-  return oneAtATime(() => sendNow(write, owner, key, route, quoted, progress, signal));
+  return oneAtATime(() => sendNow(write, owner, key, route, quoted, progress, signal), () => progress({ stage: "queued" }), signal);
 }
 
 async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, route: Route, quoted: Quote, progress: (step: Progress) => void, signal?: AbortSignal): Promise<string> {

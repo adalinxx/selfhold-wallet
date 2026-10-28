@@ -31,7 +31,7 @@ type Refusal = Error & { status?: number };
  * expected at this device's pace) come with the grinding.
  */
 export interface Step {
-  stage: "work" | "busy" | "grind" | "sign";
+  stage: "work" | "busy" | "grind" | "sign" | "queued";
   device?: string;
   done?: number;
   left?: number;
@@ -51,6 +51,17 @@ interface Work {
   prefixHex: string; startNonce: string; count: string; expiresInMilliseconds: string;
 }
 
+/** A signal that aborts with the first of `a` and `b` (AbortSignal.any, where the browser lacks it). */
+function either(a: AbortSignal, b: AbortSignal): AbortSignal {
+  if (AbortSignal.any) return AbortSignal.any([a, b]);
+  const both = new AbortController();
+  for (const s of [a, b]) {
+    if (s.aborted) both.abort(s.reason);
+    else s.addEventListener("abort", () => both.abort(s.reason), { once: true });
+  }
+  return both.signal;
+}
+
 /** POSTs `body` to the sponsor's `path`; its refusal as an Error with the status. */
 async function ask(url: string, path: string, body: unknown, stop?: AbortSignal): Promise<Wire> {
   let response: Response;
@@ -59,13 +70,19 @@ async function ask(url: string, path: string, body: unknown, stop?: AbortSignal)
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: stop ? AbortSignal.any([stop, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+      signal: stop ? either(stop, AbortSignal.timeout(15_000)) : AbortSignal.timeout(15_000),
     });
   } catch (error) {
     if (stop?.aborted) throw new Stopped();
     throw new NoSponsor((error as Error).name === "TimeoutError" ? "The fee sponsor didn't answer." : "The fee sponsor can't be reached.");
   }
-  const text = await response.text();
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (error) {
+    if (stop?.aborted) throw new Stopped();
+    throw new NoSponsor((error as Error).name === "TimeoutError" ? "The fee sponsor didn't answer." : "The fee sponsor can't be reached.");
+  }
   // It pays fees, but not this much of a price: from /work, or /sponsor with a token already earned.
   if (response.status === 400 && /pays at most/.test(text)) throw new NoPay(text);
   if (!response.ok) {
@@ -120,7 +137,8 @@ export async function sponsorFee(url: string, draft: TransactionBody, progress: 
   // first shader compile can take seconds.
   progress({ stage: "work" });
   await workDevice();
-  const effort = { began: 0, hashes: 0, done: 0, shares: 0 };
+  // Hashes, and milliseconds spent hashing, across works: not the waits between them.
+  const effort = { spent: 0, hashes: 0, done: 0, shares: 0 };
   const patience = Date.now() + (wait ? 60_000 : 0);
   // Work refused round after round earns nothing: past this, the sponsor is no help.
   const deadline = Date.now() + LONGEST;
@@ -185,7 +203,7 @@ export function check(draft: TransactionBody, sponsored: TransactionBody, fee: b
  * carries the time and hashes spent on this fee across works. Throws
  * TooMuchWork once this device's pace shows the fee would take too long.
  */
-async function grind(url: string, work: Work, effort: { began: number; hashes: number; done: number; shares: number }, progress: Progress, signal?: AbortSignal): Promise<boolean> {
+async function grind(url: string, work: Work, effort: { spent: number; hashes: number; done: number; shares: number }, progress: Progress, signal?: AbortSignal): Promise<boolean> {
   // What the credit buys: the fee, and what the sponsor pays the account.
   const fee = BigInt(work.fee) + BigInt(work.pay ?? 0);
   // A share is worth 2^256 / (target + 1) hashes, expected.
@@ -231,11 +249,12 @@ async function grind(url: string, work: Work, effort: { began: number; hashes: n
       }
     });
   };
+  let began = 0; // this work's first batch done, past its start-up
   const hashed = (count: number) => {
     // Paced from the first batch done, past the start-up.
-    if (!effort.began) return void (effort.began = performance.now());
+    if (!began) return void (began = performance.now());
     effort.hashes += count;
-    const spent = performance.now() - effort.began;
+    const spent = effort.spent + performance.now() - began;
     if (spent < 2000) return;
     pace = effort.hashes / spent;
     const expected = needed / pace;
@@ -258,6 +277,7 @@ async function grind(url: string, work: Work, effort: { began: number; hashes: n
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener("abort", stop);
+    if (began) effort.spent += performance.now() - began;
     hashing.stop();
   }
 }

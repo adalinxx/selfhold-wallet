@@ -65,7 +65,9 @@ export function selfhold(options: Options = {}) {
     if (!opened) return Promise.reject(new Error("The browser blocked Selfhold's window. Allow pop-ups for this site, then try again."));
     return new Promise((resolve) => {
       let sent = false;
+      let settled = false;
       const finish = (answer: Answer) => {
+        settled = true;
         window.removeEventListener("message", heard);
         clearInterval(watching);
         resolve(answer);
@@ -74,7 +76,10 @@ export function selfhold(options: Options = {}) {
         const data = event.data;
         if (event.origin !== wallet.origin || event.source !== opened || data?.channel !== CHANNEL || data.id !== id) return;
         // Ready again: the window was reloaded, and the call it had is gone. It is never sent twice.
-        if (data.ready && sent) return finish({ ok: false, error: "The Selfhold window was reloaded. Nothing was signed; try again." });
+        if (data.ready && sent) {
+          opened.close();
+          return finish({ ok: false, error: "The Selfhold window was reloaded. Nothing was signed; try again." });
+        }
         if (data.ready) {
           sent = true;
           try {
@@ -85,6 +90,8 @@ export function selfhold(options: Options = {}) {
             }
             const hosts = route && options.hosts ? await options.hosts() : undefined;
             const sponsor = route && options.sponsor ? await options.sponsor() : undefined;
+            // Answered meanwhile (reloaded, or closed): the call is never sent.
+            if (settled) return;
             opened.postMessage({ channel: CHANNEL, id, call: asked, ...(route ? { route: { ...(hosts && { hosts }), ...(sponsor && { sponsor }) } } : {}) }, wallet.origin);
           } catch (error) {
             opened.close();
