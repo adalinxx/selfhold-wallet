@@ -2147,9 +2147,10 @@ async function webAccountScreen() {
     const r = await wallet.webAccountAccept(address, password ?? undefined);
     if (!r.ok) { err.textContent = r.error; return; }
     st = r.state;
+    const named = st.accounts.find((a) => a.address === address)?.label ?? "Selfhold web";
     render(h("div", { class: "stack" },
       h("h1", {}, "Added"),
-      h("p", { class: "muted" }, "Your Selfhold web account is an account here now, named Selfhold web: the same address, coins and names in both."),
+      h("p", { class: "muted" }, `Your Selfhold web account is an account here now, named ${named}: the same address, coins and names in both.`),
       h("button", { class: "block", onclick: close }, "Done"),
     ));
   };

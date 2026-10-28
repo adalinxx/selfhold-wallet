@@ -447,7 +447,9 @@ function addToExtension(address: string) {
       key.fill(0);
       const answer = await toExtension({ type: "webAccount", privHex: hex }, 10_000);
       if (!answer?.ok) throw new Error(answer?.error ?? "Selfhold for Chrome didn't answer");
-      status.textContent = `Selfhold for Chrome asks you, in its own window, to add ${shortAddress(address)}.`;
+      // What the extension says it was handed, beside this account: they differ only if something else spoke first.
+      if (answer.address !== address) throw new Error(`Selfhold for Chrome is holding another account, ${shortAddress(answer.address ?? "")}: don't add it. Choose Not now there, then try again.`);
+      status.textContent = `Selfhold for Chrome asks you, in its own window, to add ${shortAddress(address)}: this account.`;
     } catch (error) {
       status.className = "warn";
       status.textContent = message(error);

@@ -282,20 +282,35 @@ const APPROVE_PAGE = chrome.runtime.getURL("approve/index.html");
 const offered = webAccounts(chrome.storage.session
   ? { get: async () => ((await chrome.storage.session.get("webAccount")).webAccount as Held | undefined) ?? null, set: (held) => chrome.storage.session.set({ webAccount: held }) }
   : memoryKeep());
-// The extension's window that asks about it, while it is open: one at a time.
-let webAccountWindow: number | undefined;
+// Each step of a hand-over, one after another: an offer and its window, an
+// answer, a closed window. So two at once can't both pass a check before either acts.
+let handoff: Promise<unknown> = Promise.resolve();
+const inTurn = <T>(step: () => Promise<T>): Promise<T> => {
+  const done = handoff.then(step);
+  handoff = done.catch(() => {});
+  return done;
+};
+// The extension's window that asks about it, while it is open: one at a
+// time. Kept with the account, so the worker's idle stops don't lose it.
+const askingWindow = {
+  get: async () => (chrome.storage.session ? ((await chrome.storage.session.get("webAccountWindow")).webAccountWindow as number | undefined) : undefined),
+  set: async (id: number | undefined) => { await chrome.storage.session?.set({ webAccountWindow: id ?? null }); },
+};
 chrome.windows.onRemoved.addListener((closed) => {
-  if (closed !== webAccountWindow) return;
-  webAccountWindow = undefined;
-  void offered.clear(); // closed without an answer: not now
+  void inTurn(async () => {
+    if (closed !== (await askingWindow.get())) return;
+    await askingWindow.set(undefined);
+    await offered.clear(); // closed without an answer: not now
+  });
 });
 async function askAboutWebAccount() {
-  if (webAccountWindow !== undefined) {
-    const shown = await chrome.windows.update(webAccountWindow, { focused: true }).then(() => true, () => false);
+  const open = await askingWindow.get();
+  if (typeof open === "number") {
+    const shown = await chrome.windows.update(open, { focused: true }).then(() => true, () => false);
     if (shown) return;
   }
   const opened = await chrome.windows.create({ url: chrome.runtime.getURL("popup/index.html?view=web-account"), type: "popup", width: 380, height: 600 });
-  webAccountWindow = opened?.id;
+  await askingWindow.set(opened?.id);
 }
 
 /**
@@ -336,16 +351,18 @@ async function acceptWebAccount(address: unknown, password?: string): Promise<Re
 // and the origin Chrome reports, checked again): whether this extension is
 // here, and an account to hold for the person to add or not.
 chrome.runtime.onMessageExternal.addListener((message: { type?: unknown; privHex?: unknown }, sender, sendResponse) => {
-  if (sender.origin !== WEB_WALLET_ORIGIN || pageOrigin(sender) !== WEB_WALLET_ORIGIN) return false;
+  // A page, never another extension (the manifest admits none; checked again).
+  if (sender.id !== undefined || sender.origin !== WEB_WALLET_ORIGIN || pageOrigin(sender) !== WEB_WALLET_ORIGIN) return false;
   if (message?.type === "webAccountHere") {
     sendResponse({ ok: true });
     return false;
   }
   if (message?.type !== "webAccount") return false;
-  offered.offer(message.privHex).then(async (held) => {
+  inTurn(async () => {
+    const held = await offered.offer(message.privHex);
     if (held.ok) await askAboutWebAccount().catch(() => {});
-    sendResponse(held);
-  });
+    return held;
+  }).then(sendResponse, (e) => sendResponse({ ok: false, error: String(e?.message ?? e) }));
   return true;
 });
 
@@ -385,8 +402,8 @@ chrome.runtime.onMessage.addListener((message: { type?: unknown }, sender, sendR
   }
   if (msg.type === "webAccountPending" || msg.type === "webAccountDecline" || msg.type === "webAccountAccept") {
     const answer = msg.type === "webAccountPending" ? offered.pending().then((address) => ({ ok: true, address }))
-      : msg.type === "webAccountDecline" ? offered.clear().then(() => ({ ok: true }))
-      : acceptWebAccount(msg.address, msg.password);
+      : msg.type === "webAccountDecline" ? inTurn(() => offered.clear()).then(() => ({ ok: true }))
+      : inTurn(() => acceptWebAccount(msg.address, msg.password));
     if (msg.type === "webAccountAccept") chrome.alarms.create("auto-lock", { delayInMinutes: AUTO_LOCK_MINUTES });
     answer.then(sendResponse).catch((e) => sendResponse({ ok: false, error: String(e?.message ?? e) }));
     return true;

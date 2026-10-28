@@ -121,6 +121,15 @@ test("the worker takes it from Selfhold's window only, and adds the account the 
   assert.equal(again.state.active, ADDRESS);
   assert.equal(again.state.accounts.length, added.state.accounts.length);
 
+  // Two at once, as from a script racing the window: one is held, the other refused, and one window asks.
+  const before = opened.length + focused.length;
+  const both = await Promise.all([hand(window, OTHER), hand(window, KEY)]);
+  assert.deepEqual(both.map((b) => b.ok), [true, false]);
+  assert.equal(opened.length + focused.length, before + 1);
+  await popup({ type: "webAccountDecline" });
+  // Another extension, even claiming the window's page, is refused.
+  await assert.rejects(hand({ ...window, id: "other-extension" }), /ignored/);
+
   // Not now forgets it; so does closing the window that asks.
   await hand(window, OTHER);
   await popup({ type: "webAccountDecline" });

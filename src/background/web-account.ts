@@ -1,6 +1,7 @@
 // An account Selfhold's window handed this extension, held until the person
 // adds it here or not: one at a time, for two minutes, in memory the browser
-// keeps for the session only (it outlasts the worker's idle stops, never a restart).
+// keeps for the session only (it outlasts the worker's idle stops, never a
+// restart). The worker calls it one step at a time.
 
 import { importPrivateKey } from "../lib/crypto/accounts.ts";
 
