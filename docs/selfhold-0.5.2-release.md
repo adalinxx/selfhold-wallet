@@ -1,6 +1,6 @@
 # Selfhold 0.5.2 candidate evidence
 
-Prepared October 28, 2026. **Draft: not ready for Store submission.** Browser acceptance and review of the new web-account import disclosure remain pending. No independent audit is claimed.
+Prepared October 28, 2026. Scoped non-secret browser acceptance is complete. Valid browser key handoff and the limitations below remain untested; publication approval must account for those gaps. No independent audit is claimed.
 
 ## Source and scope
 
@@ -30,8 +30,16 @@ Node 24.21.0 on macOS; clean lockfile install and pinned SDK build.
 
 ## Remaining acceptance and publication route
 
-Browser work is held for an uninterrupted interval coordinated with the user and Store task. Repeat unpacked 0.5.1 upgrade using the actual extension Reload control; verify vault/accounts/settings/recovery preservation and changed fee behavior. Exercise paste, QR-image, file and website request review/decline and the new external account handoff with synthetic accounts only, including locked wallet, wrong origin, expiry and decline. No live signing, funded transactions or real keys are authorized for these checks. A browser handoff of even a synthetic private key across the web/extension boundary requires separate approval; until then, limit external-message browser checks to detection, non-secret invalid offers, refusal and cancellation. Unit tests use isolated in-process mocks and do not establish that browser handoff acceptance passed.
+Chrome for Testing 153.0.8010.12 on macOS, with isolated temporary profiles and disposable accounts:
+
+- Unpacked 0.5.1 → 0.5.2 upgrade through the actual extension Reload control preserved account, active address, settings and password. The new manifest reported 0.5.2. This did not establish Store-signed upgrade or recovery-record preservation.
+- Malformed and expired requests were refused. Paste, file, QR-image and unconnected website requests reached review and were declined; the unconnected website remained disconnected. The unfunded pasted request could not sign.
+- Website write review preserved saved fee 7 and explicit fees 0 and 3. With no saved fee, review resolved the live node floor to 1; the request was declined. No transaction was signed or submitted.
+- Connect's new-account option created and selected a fresh account; the site received only its public address. The unused-node-permissions control remained absent and retained-grant guidance was present.
+- A synthetic top-level page at the allowed web-wallet origin detected the unpacked extension. A non-secret invalid offer was refused with no pending import. Another origin and an iframe at the allowed origin could not use the detection handler. The no-offer screen and close/cancel path passed.
+
+No private key was transmitted across the web/extension boundary. A valid handoff, its locked/unlocked import decisions and browser expiry behavior were **not** exercised. Tests used the unpacked extension ID and do not validate the published web wallet's Store-ID/passkey integration. In-process unit tests cover synthetic valid offers, address binding, expiry and origin checks, but are not browser acceptance. Test-harness waits were corrected for an already-closed window, extension CSP and asynchronous fee discovery; no product changes were needed. Both isolated browser sessions were closed.
 
 Store-signed upgrade, camera capture, forced outages, deployed purchase-review and funded-flow repeat validation remain untested on this candidate. Default test skips are not evidence for isolated-node or live funded acceptance. Existing historical reports do not validate the new flows.
 
-After browser acceptance and disclosure review: update this evidence, verify candidate CI and source, reconcile/merge only the release PR with owner authorization, verify main tree and published policy, rebuild and compare the approved ZIP, then hand the exact artifact to the Store task. Preserve the existing Store item and publisher identity. Do not upload this draft candidate while its acceptance gaps are unresolved.
+After owner approval of the disclosed limitations: verify candidate CI and source, merge only the documentation release PR, verify main tree and published policy, rebuild and compare the approved ZIP, then hand the exact artifact to the Store task. Preserve the existing Store item and publisher identity. Do not describe the remaining acceptance gaps as passed.

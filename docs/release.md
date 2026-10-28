@@ -1,6 +1,6 @@
 # Release procedure
 
-The next candidate is Selfhold 0.5.2, covering merged automatic fee selection, pending-transaction sequencing, refreshed interface, and web-wallet account import. Preserve the existing store item and storage when updating from 0.5.1. See [current candidate evidence](selfhold-0.5.2-release.md). Earlier reports remain historical; browser acceptance and the new external-message disclosure require review before submission.
+The next candidate is Selfhold 0.5.2, covering merged automatic fee selection, pending-transaction sequencing, refreshed interface, and web-wallet account import. Preserve the existing store item and storage when updating from 0.5.1. See [current candidate evidence](selfhold-0.5.2-release.md). Earlier reports remain historical; the current evidence records scoped non-secret browser acceptance and remaining handoff limitations for publication review.
 
 ## Build and verification
 
