@@ -1,6 +1,6 @@
 # Chrome Web Store submission materials
 
-Local draft for Selfhold 0.5.1. The Selfhold name and round-two logo A are selected; the production reconstruction and final declarations remain available for review.
+Local draft for Selfhold 0.6.0. The Selfhold name and round-two logo A are selected; the production reconstruction and final declarations remain available for review.
 
 Name: Selfhold
 
@@ -21,7 +21,7 @@ Selfhold is an open-source, self-custodial wallet for Lattice. Manage accounts a
 
 You control your keys. Keep an offline backup of your recovery phrase. Node availability, transaction confirmation, and cross-chain order availability depend on the selected network and operators.
 
-Homepage: https://lattice.build/
+Homepage: https://selfhold.app/
 Support email: support@lattice.build
 Support: https://github.com/adalinxx/selfhold-wallet/issues
 Privacy policy: https://github.com/adalinxx/selfhold-wallet/blob/main/docs/privacy-policy.md
@@ -48,7 +48,7 @@ Content scripts: A page-world API and an isolated relay run at document start on
 
 Local storage also retains site-origin/account connections and pending page-write chain/account/nonce/CID/node metadata. Approved writes go to the selected node and the site receives the CID; approved messages return the public key and origin-bound signature to the site. The privacy policy must describe these disclosures before submission. Reassess the dashboard data categories against this behavior; do not automatically carry forward the prior certifications.
 
-From 0.5.0, `openRequest` can open a write approval without a prior site connection. Pasted/scanned requests use the same approval flow with no website callback. Opening does not authorize signing or create a standing connection. Selected nodes receive chain and content-identifier reads for write-if-absent checks; these access patterns may reveal the records being checked. Approved records/payments are submitted only after explicit approval. Request labels and node-provided state are not independently authenticated. No new manifest permissions are introduced in 0.5.0 or 0.5.1. From 0.5.1, website record writes may omit the fee; review then uses the fixed fee set for the requested chain, or otherwise the automatic fee of the node the account is read from. Explicit fees, including zero, are preserved.
+From 0.5.0, `openRequest` can open a write approval without a prior site connection. Pasted/scanned requests use the same approval flow with no website callback. Opening does not authorize signing or create a standing connection. Selected nodes receive chain and content-identifier reads for write-if-absent checks; these access patterns may reveal the records being checked. Approved records/payments are submitted only after explicit approval. Request labels and node-provided state are not independently authenticated. No new manifest permissions are introduced in 0.5.0 or 0.5.1. From 0.6.0, website record writes may omit the fee; review then uses the fixed fee set for the requested chain, or otherwise the automatic fee of the node the account is read from. Explicit fees, including zero, are preserved.
 
 Remote code: No. JavaScript and WebAssembly dependencies are bundled in the package; node responses are data.
 
@@ -66,7 +66,7 @@ Certifications: No sale of user data; no use unrelated to the wallet's single pu
 6. Lock from Settings, then unlock with the test password. A wrong password must fail.
 7. Backup and import can be tested with disposable accounts. Camera permission is needed only for camera scanning; paste/file import is also available.
 8. On a disposable HTTPS or loopback test site, call `connect()` from a click. Confirm the correct origin and account in the extension window. Decline and close requests, test a second simultaneous request, and navigate/reload the requesting page before approval. Confirm these cannot produce a signature or payment without a valid request and explicit approval.
-9. For 0.5.1, test a website record write with no fee and verify the chain's fixed fee, or the node's automatic fee, is shown; an explicit zero or nonzero fee must remain unchanged. Decline during read-only checks. Inspect a record write with payments: check each recipient, total, fee, chain and record change. Check message-signing review and a message naming a different origin. Use disposable local funds only for submission tests; do not provide shared funded credentials.
+9. For 0.6.0, test a website record write with no fee and verify the chain's fixed fee, or the node's automatic fee, is shown; an explicit zero or nonzero fee must remain unchanged. Decline during read-only checks. Inspect a record write with payments: check each recipient, total, fee, chain and record change. Check message-signing review and a message naming a different origin. Use disposable local funds only for submission tests; do not provide shared funded credentials.
 10. Open a current `lattice://write` request via Open request (paste/file/QR), and through `window.lattice.openRequest(uri)` on a disposable test site without connecting first. Check account selection, unverified label, record changes, skipped existing records, recipients, total and fee. Decline/close it and verify no submission or standing connection. Expired/malformed requests must be rejected; a changed account must redraw review. Do not sign during read-only acceptance.
 11. Actual submission needs funds on the selected chain. No funded shared credential is included. For repeatable funded verification, run the isolated-node tests described in docs/release.md.
 
@@ -75,3 +75,9 @@ Certifications: No sale of user data; no use unrelated to the wallet's single pu
 Use the selected Selfhold S/key mark: SVG master and 16/32/48/128px exports in public/assets. Existing screenshots are historical and must be reviewed/refreshed for Selfhold branding before submission. Three actual 1280×800 Chrome screenshots are checked in under docs/store-assets: welcome, node choice, and unlock. They contain disposable data and no seeds, passwords or cookies. Regenerate with PLAYWRIGHT_MODULE pointing to your installed Playwright package and `node scripts/store-screenshots.cjs`; generated files appear in release/store-assets. A 440×280 promotional image is provided at docs/store-assets/selfhold-promo-440x280.png; it is artwork, not a browser screenshot.
 
 Retain the established pseudonymous publisher account and support@lattice.build contact; verify two-step verification in the dashboard. Do not create a new item: update the existing item to preserve its extension ID and storage. The product rename does not authorize changing publisher identity. Publisher registration, account verification, fees, jurisdiction declarations, and final certification are account-owner actions. Select deferred publication while the release gates remain open.
+
+## 0.6.0 disclosure and reviewer update
+
+The required and optional host permissions, content-script matches, storage and alarms permissions are unchanged from 0.5.1. The manifest now permits external messages from exactly https://wallet.selfhold.app/*; the worker additionally requires that origin and a top-level page, and refuses other extensions. This is a new account-import interface, not blanket access for other sites. Review the authentication-information disclosure: a private key is handed locally from the web wallet to temporary extension session storage, then saved in the encrypted vault only after confirmation. The offer expires after two minutes with cleanup on next access; accepting, declining or closing the confirmation clears it. Import does not delete the account from the web wallet. The privacy policy must be published before submission. No new dashboard declarations are certified by this draft.
+
+Using only disposable accounts, test the web-wallet handoff into a fresh wallet, an existing locked/unlocked wallet, decline/close, wrong origins and expired offers. Confirm addresses and ensure no existing extension key is returned to the page. Review automatic fees and pending-transaction handling without signing during read-only acceptance. The web wallet is separately built/deployed; its files are not part of the Chrome ZIP. Homepage remains https://selfhold.app/.

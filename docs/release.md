@@ -1,6 +1,6 @@
 # Release procedure
 
-The next candidate is Selfhold 0.5.1, a patch release for default fees on website record writes and canonical repository links. Preserve the existing store item and storage when updating from 0.5.0. See [current candidate evidence](selfhold-0.5.1-release.md); earlier reports remain historical.
+The next candidate is Selfhold 0.6.0, covering merged automatic fee selection, pending-transaction sequencing, refreshed interface, and web-wallet account import. Preserve the existing store item and storage when updating from 0.5.1. See [current candidate evidence](selfhold-0.6.0-release.md). Earlier reports remain historical; browser acceptance and the new external-message disclosure require review before submission.
 
 ## Build and verification
 
