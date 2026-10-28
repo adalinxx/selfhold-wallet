@@ -10,71 +10,19 @@
 
 import { totalDebit, type ProviderCall, type WriteRequest } from "../lib/wallet/provider.ts";
 import { absentKeys, fillWriteRequest, type WriteIntent } from "../lib/wallet/write-request.ts";
-import { addressGroups, addressNames, nameAddresses, otherHosts, payeeRecords, paymentsToShow, shortAddress } from "../lib/wallet/review.ts";
+import { addressNames, otherHosts, payeeRecords, paymentsToShow, shortAddress } from "../lib/wallet/review.ts";
+import { el, fmt, fullAddress, label, named, notice, row, site, valueNode, visible } from "./view.ts";
 import type { WalletState } from "../lib/wallet/types.ts";
 import { chosenFee, defaultFee, loadSettings } from "../lib/wallet/settings.ts";
 import { chosenNodes, discoveryStarts, knownPending, livePageWrites, nextNonce, type PageWrite } from "../lib/wallet/nonce.ts";
 import { automaticFee, browserFetch, chainNodes, readFeeMarket, reader, recordsPresent, sentStatus, weigh, type FeeMarket } from "../lib/wallet/node.ts";
 import { recordsBody } from "../lib/wallet/session.ts";
 import { ALL_HTTPS_ORIGINS, originPattern } from "../lib/config.ts";
-import { icon } from "../popup/icons.ts";
 
 const id = new URLSearchParams(location.search).get("id") ?? "";
 const view = document.getElementById("view")!;
 type Answer = { ok: boolean; error?: string; [key: string]: unknown };
 const send = (msg: object) => chrome.runtime.sendMessage(msg) as Promise<Answer>;
-
-function el(tag: string, props: Record<string, unknown> = {}, ...children: (Node | string)[]): HTMLElement {
-  const node = Object.assign(document.createElement(tag), props);
-  node.append(...children);
-  return node;
-}
-// Characters that print as nothing, or reorder what follows, are shown as
-// their code points, so a key cannot pass for another.
-// A backslash is escaped too, so an escape shown is never text that looks like one.
-const visible = (text: string) => text.replace(/\\|[^\S ]|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\u115f\u1160\u2800\u3164\uffa0]/gu,
-  (ch) => ch === "\\" ? "\\\\" : ch === " " ? ch : `\\u{${ch.codePointAt(0)!.toString(16)}}`);
-/** A value as sent: the first 400 characters, the rest a click away. */
-function valueNode(label: string, value: string | undefined): HTMLElement {
-  if (value === undefined) return el("div", { className: "value", textContent: `${label}: (none)` });
-  const text = visible(value);
-  if (text.length <= 400) return el("div", { className: "value", textContent: `${label}: ${text}` });
-  return el("details", { className: "value" }, el("summary", { textContent: `${label}: ${text.slice(0, 400)}… (${text.length} characters)` }), text);
-}
-// Exact: amounts are UInt64, never rounded through a double.
-const fmt = (n: string | bigint) => BigInt(n).toLocaleString("en-US");
-const label = (text: string) => el("p", { className: "section-label", textContent: text });
-const row = (key: string, ...value: (Node | string)[]) => el("div", { className: "row" }, el("span", { className: "k", textContent: key }), el("span", { className: "v" }, ...value));
-
-/** A site as people check it: the host, whole and in bold; the scheme only when it is not https. Null: pasted into the wallet. */
-function site(origin: string | null): HTMLElement {
-  if (origin === null) return el("span", { className: "origin" }, el("strong", { textContent: "a pasted request" }));
-  const url = new URL(origin);
-  return el("span", { className: "origin" }, ...(url.protocol === "https:" ? [] : [el("span", { className: "scheme", textContent: `${url.protocol}//` })]), el("strong", { textContent: url.host }));
-}
-/** A whole address, four characters to a group, to compare a group at a time. Copied, it is unbroken. */
-const fullAddress = (address: string) => el("span", { className: "groups" }, ...addressGroups(address).map((g) => el("span", { textContent: g })));
-
-/**
- * Text with every address the wallet knows shown as its name, cut to about
- * `limit` characters (Details shows it all).
- */
-function named(text: string, names: ReadonlyMap<string, string>, limit = Infinity): HTMLElement {
-  const out = el("span", { className: "named" });
-  let room = limit;
-  for (const segment of nameAddresses(text, names)) {
-    if (room <= 0) break;
-    if ("name" in segment) {
-      out.append(el("span", { className: "name", title: segment.address, textContent: segment.name }));
-      room -= segment.name.length;
-    } else {
-      const shown = visible(segment.text);
-      out.append(shown.length > room ? `${shown.slice(0, room)}…` : shown);
-      room -= shown.length;
-    }
-  }
-  return out;
-}
 
 // Each screen drawn: a read begun for an earlier one (another account, say) is dropped when it returns.
 let drawn = 0;
@@ -197,16 +145,6 @@ async function decide(approve: boolean, address?: string, nonce?: { nonce: bigin
 // click aimed at something else cannot land on it. A bar fills across it
 // meanwhile, so a button that waits is not mistaken for a broken one.
 const ARM_MS = 800;
-/**
- * A risk, at its tier (docs/brand/guidebook.md §6): told apart by ink weight,
- * never color. A warning is outlined in ink; a danger is inverted, and turns
- * the decision round (see `decision`). The message names the specific risk.
- */
-function notice(tier: "warning" | "danger", message: string) {
-  return el("p", { className: `notice ${tier}` }, icon("warning"),
-    el("span", {}, el("strong", { className: "tier", textContent: tier === "danger" ? "Danger" : "Warning" }), el("span", { className: "notice-text", textContent: message })));
-}
-
 /**
  * The decision, kept at the foot of the window so it is never scrolled away
  * from what it decides: a line saying why the approving button waits, when

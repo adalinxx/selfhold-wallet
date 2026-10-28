@@ -269,6 +269,46 @@ const { transactionCID } = await lattice.openRequest(uri);
   or key press the person just made (pages call `address()` on load), and a
   site whose request was declined waits a few seconds before asking again.
 
+## Selfhold on the web: `wallet.selfhold.app`
+
+For people without the extension, Selfhold also runs as a web page at
+`wallet.selfhold.app`. A site opens it in a window over its page, as a
+payment window opens, and gets back only what the person approved. The
+account's key comes from a passkey (WebAuthn's PRF extension). The passkey
+belongs to `selfhold.app`, so it makes the same account on every site that
+uses Selfhold, whatever the site's domain. The window asks the passkey again
+for every approval, holds the key only while it signs, and refuses to run
+inside a frame.
+
+A site loads `selfhold.js` (built into `dist-web/`) and makes the same calls
+as `window.lattice`, each from a click:
+
+```js
+import { selfhold } from "./selfhold.js";
+const wallet = selfhold({ hosts: () => [node], sponsor: () => sponsorURL });
+const address = await wallet.connect();
+const { transactionCID } = await wallet.writeRecords({ chainPath, actions, payments }, { progress: (text) => {} });
+const { publicKey, signature } = await wallet.signMessage({ text });
+```
+
+A write can be passed as a promise, so the window opens on the click and
+waits while the site reads what to write. The site's page must keep its
+opener: `Cross-Origin-Opener-Policy: same-origin` cuts the window off, and
+`same-origin-allow-popups` keeps it.
+
+A site may suggest hosts for the chain and a fee sponsor; both are shown in
+the window's Details. With a sponsor, the fee is paid with work done on the
+person's device: the graphics chip through WebGPU, else the processor. The
+sponsor adds only its fee debit, and, when the account is short of a write's
+payments, a credit to it; the window checks that before signing
+(`src/web/sponsor.ts`). Without enough coins and no sponsor's help, the write
+is refused as `NeedsCoins`.
+
+It is the easier Selfhold, not the safer one: see the next section. Whoever
+controls `wallet.selfhold.app`'s code (its host, its DNS, this repository's
+deploys) could serve a page that asks the passkey for the key. The
+extension's frozen, reviewed bundle has no such single point.
+
 ## Why an extension (not a web page)
 
 A static web wallet re-fetches its code on every load, so a host/DNS/supply-chain
@@ -387,6 +427,7 @@ npm ci                 # pinned deps; `prepare` builds the SDK
 npm run typecheck
 npm test               # conformance, derivation freeze, wallet logic (must pass)
 npm run build          # -> dist/
+npm run build:web      # -> dist-web/: wallet.selfhold.app, and selfhold.js
 ```
 
 Then load `dist/` as an unpacked extension: `chrome://extensions` → Developer
