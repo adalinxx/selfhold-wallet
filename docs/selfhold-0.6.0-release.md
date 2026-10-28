@@ -4,9 +4,9 @@ Prepared October 28, 2026. **Draft: not ready for Store submission.** Browser ac
 
 ## Source and scope
 
-Merged baseline: `e8c6540aeeb55fdac6f78c1bc6e13287b24329d7`; previous submitted 0.5.1: `ad78603ba0aaea853568a102662b5ab800655b9b`. SDK: `1e3ab50ab591c1c6ccab3b4187f3dfb984bb1ebe`. GitHub's repository API still identifies `adalinxx/selfhold-wallet` as canonical, although SDK/design references moved to 0xLattice. The open accounts-and-handles PR #22 is excluded.
+Merged baseline: `e58e0d9a0f50570291a7d10e1f38e0be8649959b`; previous submitted 0.5.1: `ad78603ba0aaea853568a102662b5ab800655b9b`. SDK: `1e3ab50ab591c1c6ccab3b4187f3dfb984bb1ebe`. GitHub's repository API still identifies `adalinxx/selfhold-wallet` as canonical, although SDK/design references moved to 0xLattice. PR #22 merged during preparation and is included after revalidation; no unmerged feature is included.
 
-Merged PRs #26–#42 add automatic node/weight-based fees and block-time warnings; branding, typography, activity and approval refinements; same-chain pending-write sequencing and recovery; SDK updates; a separately deployed web wallet; and its account handoff into Chrome. The new features justify a minor candidate version of 0.6.0. Release preparation changes version and documentation only. The removed unused-node-permissions control remains absent. Homepage: https://selfhold.app/.
+Merged PRs #22 and #26–#42 add automatic node/weight-based fees and block-time warnings; branding, typography, activity and approval refinements; same-chain pending-write sequencing and recovery; SDK updates; a separately deployed web wallet; its account handoff into Chrome; account creation in Connect; and account labels derived from accepted Moniker handle writes without additional handle lookups. The new features justify a minor candidate version of 0.6.0. Release preparation changes version and documentation only. The removed unused-node-permissions control remains absent. Homepage: https://selfhold.app/.
 
 ## Permissions and privacy
 
@@ -18,11 +18,11 @@ The policy now describes the handoff and corrects the historical fee description
 
 Node 24.21.0 on macOS; clean lockfile install and pinned SDK build.
 
-- TypeScript passes; wallet suite: 212 pass, 5 opt-in skips, no failures.
+- TypeScript passes; wallet suite: 219 pass, 5 opt-in skips, no failures.
 - 22 conformance checks and 126 SDK tests pass.
 - Extension package and separate web build pass.
 - Both production dependency audits report zero vulnerabilities.
-- Two package builds with different process timezones are byte-identical. SHA-256: `c7fb94e73decaeaedd5700bd2b3549b4b3629c821dd90ad34c755aef28f7753d`.
+- Two package builds with different process timezones are byte-identical. SHA-256: `50b2f2d937b12530206e3a43a3f5e480092b2e8ca017a8861b203f651d93821a`.
 - ZIP contains 19 files, manifest at root, no maps, node_modules or web build. Manifest comparison and personal-name/local-path/credential-pattern scans pass. Required third-party license attributions are preserved. Pattern scans do not prove absence of all possible secrets.
 - Deployed read/discovery test passes. Read-only fee projections for Nexus and testnet both report relay floor 1, empty projected blocks and automatic estimated fee 1. This validates the current read path, not transaction inclusion or future market conditions.
 - Deployed purchase-review regression fails its fixture precondition: no eligible unpaid offer in the first 30 deposits. Review itself was not exercised against a live offer; this is not a pass.
