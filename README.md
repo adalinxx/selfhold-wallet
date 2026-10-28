@@ -303,7 +303,9 @@ person's device: the graphics chip through WebGPU, else the processor. The
 sponsor adds only its fee debit, and, when the account is short of a write's
 payments, a credit to it; the window checks that before signing
 (`src/web/sponsor.ts`). Without enough coins and no sponsor's help, the write
-is refused as `NeedsCoins`.
+is refused as `NeedsCoins`. A write goes with the address the site was
+given, which it was built for: if the window's account is another now, the
+window signs nothing, and the site forgets the address, to connect again.
 
 It is the easier Selfhold, not the safer one: see the next section. Whoever
 controls `wallet.selfhold.app`'s code (its host, its DNS, this repository's

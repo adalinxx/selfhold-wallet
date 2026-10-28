@@ -80,8 +80,8 @@ function serve(opener: Window, id: string) {
     if (!/^https:\/\//.test(event.origin) && !(local && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(event.origin))) return;
     origin = event.origin;
     if ("error" in parsed) return answer({ ok: false, error: parsed.error });
-    const { call, route } = parsed;
-    handle(call, origin, route, { answer, decline, progress: (text) => reply({ progress: text }) })
+    const { call, route, account } = parsed;
+    handle(call, origin, route, account, { answer, decline, progress: (text) => reply({ progress: text }) })
       .catch((error) => { show(el("p", { className: "warn", textContent: `${message(error)}. Nothing was signed.` }), button("Close", () => answer({ ok: false, error: message(error) }))); });
   });
   opener.postMessage({ channel: CHANNEL, id, ready: true }, "*");
@@ -90,8 +90,12 @@ function serve(opener: Window, id: string) {
 
 interface Replies { answer: (response: Answer, close?: boolean) => void; decline: () => void; progress: (text: string) => void }
 
-async function handle(call: WindowCall, origin: string, route: SiteRoute, replies: Replies) {
+async function handle(call: WindowCall, origin: string, route: SiteRoute, expected: string | undefined, replies: Replies) {
   const account = saved() ?? await setUp(origin, call.method === "connect" ? "connect" : "approve");
+  // A write is built for the account the site was given: signed by another, it would do something else.
+  if (call.method === "writeRecords" && expected !== undefined && expected !== account.address) {
+    return replies.answer({ ok: false, code: "AccountChanged", error: "Selfhold uses another account in this browser now. Nothing was signed: connect again." });
+  }
   if (call.method === "connect") return connect(origin, account.address, replies);
   if (call.method === "signMessage") return sign(origin, account.address, call.params.text, replies);
   return review(origin, account.address, call.params, route, replies);

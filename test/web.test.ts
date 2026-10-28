@@ -16,6 +16,9 @@ test("the window takes one call for its id, of those that need the person, and n
   const ok = parseCall({ channel: CHANNEL, id, call: write }, id);
   assert.ok(ok && !("error" in ok) && ok.call.method === "writeRecords");
   assert.deepEqual(parseCall({ channel: CHANNEL, id, call: { method: "connect" } }, id), { call: { method: "connect" }, route: { hosts: [], sponsor: "" } });
+  // The account the site built a write for, if it says.
+  assert.equal((parseCall({ channel: CHANNEL, id, call: write, account: "bafyreiabc" }, id) as { account?: string }).account, "bafyreiabc");
+  assert.ok("error" in parseCall({ channel: CHANNEL, id, call: write, account: 7 }, id)!);
   // Another window's message, or another channel's, is not for it.
   assert.equal(parseCall({ channel: CHANNEL, id: "other", call: write }, id), null);
   assert.equal(parseCall({ channel: "lattice-wallet", id, call: write }, id), null);
