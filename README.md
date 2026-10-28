@@ -309,6 +309,22 @@ nothing, and the site forgets the address, to connect again. With no account
 in this browser yet, the window then offers only to find that one with its
 passkey: a new account could only be refused.
 
+**One account in both.** Each Selfhold keeps its own accounts, so the
+window's account can be added to Selfhold for Chrome: the extension's account
+menu has "+ Selfhold web account", which opens the window, and the window's
+home has "Add to Selfhold for Chrome" when the extension answers there. The
+passkey gives the key, and the window hands it to the extension by Chrome's
+own messaging (`externally_connectable`, `wallet.selfhold.app` only), which
+reaches that extension alone and which no other script or extension on the
+page can read. The worker takes it only from that origin, as Chrome reports
+it; holds one account at a time, for two minutes, in session memory; and
+opens its own window, which shows the address and adds that account, and no
+other, when the person says so: as an account named "Selfhold web", or, with
+no wallet yet, as a new wallet under a new password. Closing it, or Not now,
+forgets it. Whoever controls `wallet.selfhold.app` could hand the extension
+an account of their own: the extension's window says which account it adds,
+to compare with the window's, and adds nothing unasked.
+
 It is the easier Selfhold, not the safer one: see the next section. Whoever
 controls `wallet.selfhold.app`'s code (its host, its DNS, this repository's
 deploys) could serve a page that asks the passkey for the key. The

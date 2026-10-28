@@ -56,6 +56,10 @@ export type Request =
   | { type: "lock" }
   | { type: "addAccount"; label?: string }
   | { type: "importKey"; privHex: string; label?: string }
+  // ---- an account Selfhold's window handed over (background/web-account.ts) ----
+  | { type: "webAccountPending" }
+  | { type: "webAccountAccept"; address: string; password?: string }
+  | { type: "webAccountDecline" }
   | { type: "setActive"; address: string }
   | { type: "renameAccount"; address: string; label: string } // "" restores the default name
   | { type: "reset" }

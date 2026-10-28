@@ -19,6 +19,7 @@ import { el, fmt, fullAddress, label, named, notice, row, site, valueNode, visib
 import { RP_ID, create, forget, saved, signIn, unlock, type Unlocked } from "./account.ts";
 import { CHANNEL, parseCall, type SiteRoute, type WindowCall } from "./protocol.ts";
 import { NeedsCoins, quote, send, type Progress, type Quote, type Route } from "./send.ts";
+import { EXTENSION_ID } from "../lib/web-wallet.ts";
 import { Stopped, workDevice } from "./sponsor.ts";
 
 type Answer = { ok: boolean; error?: string; [key: string]: unknown };
@@ -385,12 +386,80 @@ function home() {
       status,
     );
   }
+  const toExtension = el("div", {});
   show(
     el("h1", { textContent: "Selfhold" }),
     el("section", { className: "balance-card" }, label("Your account"), el("p", {}, fullAddress(account.address))),
     say("Sites that use Selfhold open this window to ask you. Your passkey approves each write."),
+    toExtension,
     el("button", { className: "text-action", type: "button", textContent: "Forget this account here", onclick: () => { forget(); home(); } }),
   );
+  extensionHere().then((here) => here && toExtension.replaceChildren(addToExtension(account.address)));
+}
+
+// ---------------------------------------------------------------- to Selfhold for Chrome
+
+type Runtime = { sendMessage(id: string, message: object, reply: (answer: unknown) => void): void; lastError?: unknown };
+type Answered = { ok: boolean; error?: string; address?: string };
+
+/**
+ * Says `message` to Selfhold for Chrome, by Chrome's own messaging, which
+ * reaches that extension alone and which no other script on this page can
+ * read; its answer, or null where it isn't installed or didn't answer.
+ */
+function toExtension(message: object, ms: number): Promise<Answered | null> {
+  const runtime = (globalThis as { chrome?: { runtime?: Runtime } }).chrome?.runtime;
+  if (typeof runtime?.sendMessage !== "function") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    try {
+      runtime.sendMessage(EXTENSION_ID, message, (answer) => {
+        clearTimeout(timer);
+        void runtime.lastError; // not installed: read, so Chrome doesn't log it
+        resolve(answer && typeof answer === "object" ? (answer as Answered) : null);
+      });
+    } catch {
+      clearTimeout(timer);
+      resolve(null);
+    }
+  });
+}
+
+/** Whether Selfhold for Chrome is installed and takes this page's account. */
+const extensionHere = async () => (await toExtension({ type: "webAccountHere" }, 1500))?.ok === true;
+
+/**
+ * The account, into Selfhold for Chrome too: the passkey gives the key, this
+ * page hands it to the extension, and the extension asks, in its own window,
+ * before adding it. Then it is the same account in both.
+ */
+function addToExtension(address: string) {
+  const status = el("p", { className: "meta", role: "status" });
+  let busy = false;
+  const go = button("Add to Selfhold for Chrome", async () => {
+    if (busy) return;
+    busy = true;
+    status.className = "meta";
+    status.textContent = "";
+    try {
+      const { key } = await unlock(address);
+      const hex = Array.from(key, (b) => b.toString(16).padStart(2, "0")).join("");
+      key.fill(0);
+      const answer = await toExtension({ type: "webAccount", privHex: hex }, 10_000);
+      if (!answer?.ok) throw new Error(answer?.error ?? "Selfhold for Chrome didn't answer");
+      // What the extension says it was handed, beside this account: they differ only if something else spoke first.
+      if (answer.address !== address) throw new Error(`Selfhold for Chrome is holding another account, ${shortAddress(answer.address ?? "")}: don't add it. Choose Not now there, then try again.`);
+      status.textContent = `Selfhold for Chrome asks you, in its own window, to add ${shortAddress(address)}: this account.`;
+    } catch (error) {
+      status.className = "warn";
+      status.textContent = message(error);
+    } finally {
+      busy = false;
+    }
+  });
+  return el("section", {},
+    say("Use this account in Selfhold for Chrome too: the same address, coins and names. Your passkey hands it over, and the extension asks you before adding it."),
+    go, status);
 }
 
 function show(...children: (Node | string)[]) {
