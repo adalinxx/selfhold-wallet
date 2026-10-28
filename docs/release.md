@@ -1,6 +1,6 @@
 # Release procedure
 
-The next candidate is Selfhold 0.5.2: one account in both Selfhold's window and the extension (the window hands its account over, by `externally_connectable` from `https://wallet.selfhold.app/*` only, and the extension asks before adding it), and a new account from the connect window, named after its Moniker handle. Preserve the existing store item and storage when updating from 0.5.1. The new `externally_connectable` key adds no permission and no install prompt. Earlier reports remain historical.
+The next candidate is Selfhold 0.5.2, covering merged automatic fee selection, pending-transaction sequencing, refreshed interface, and web-wallet account import. Preserve the existing store item and storage when updating from 0.5.1. See [current candidate evidence](selfhold-0.5.2-release.md). Earlier reports remain historical; browser acceptance and the new external-message disclosure require review before submission.
 
 ## Build and verification
 
