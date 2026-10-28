@@ -36,11 +36,11 @@ test("a site's hosts and sponsor are http(s) URLs, few, and only those", () => {
   ]) assert.ok("error" in parseRoute(bad), JSON.stringify(bad));
 });
 
-test("passkeys belong to selfhold.app on its pages, and to the page's own host elsewhere", () => {
-  assert.equal(rpId("wallet.selfhold.app"), "selfhold.app");
-  assert.equal(rpId("selfhold.app"), "selfhold.app");
+test("passkeys belong to wallet.selfhold.app wherever the page is served, and to localhost only in tests", () => {
+  for (const host of ["wallet.selfhold.app", "selfhold.app", "adalinxx.github.io", "wallet.selfhold.app.", "selfhold.app.example"]) {
+    assert.equal(rpId(host), "wallet.selfhold.app", host);
+  }
   assert.equal(rpId("localhost"), "localhost");
-  assert.equal(rpId("selfhold.app.example"), "selfhold.app.example");
 });
 
 test("a sponsor may add only its fee debit and, when asked, its credit to the account", () => {

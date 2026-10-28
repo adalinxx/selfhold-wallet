@@ -1,9 +1,10 @@
 // The web wallet's account: its key is derived from a passkey (WebAuthn's
 // PRF extension), so the passkey's provider keeps it and syncs it to the
 // person's other devices. The wallet stores no key, only which passkey and
-// the address it makes. Passkeys belong to selfhold.app itself, so the same
-// passkey makes the same account on every Selfhold page, and every site that
-// opens the wallet is asking the same account.
+// the address it makes. Passkeys belong to the wallet's own host,
+// wallet.selfhold.app, and to no other page: every site that opens the
+// wallet is asking the same account, and no other page on selfhold.app, if
+// it went wrong, could ask a passkey for anyone's key.
 
 import { accountFromPrivateKey } from "@adalin/lattice-core";
 
@@ -14,8 +15,14 @@ const SALT = new TextEncoder().encode("Selfhold account key, v1");
 export interface Saved { credential: string; address: string }
 export interface Unlocked { address: string; key: Uint8Array }
 
-/** The passkeys' domain: selfhold.app on its pages, else the page's own host (localhost, in tests). */
-export const rpId = (hostname = location.hostname) => (hostname === "selfhold.app" || hostname.endsWith(".selfhold.app") ? "selfhold.app" : hostname);
+/** The passkeys' domain. FROZEN once accounts exist. */
+export const RP_ID = "wallet.selfhold.app";
+/**
+ * The passkeys' domain for a page on `hostname`: always RP_ID (localhost, in
+ * tests). Served from any other host, the browser refuses RP_ID, so a
+ * misplaced copy can't make passkeys that other pages there could ask.
+ */
+export const rpId = (hostname = location.hostname) => (hostname === "localhost" ? "localhost" : RP_ID);
 
 export function saved(): Saved | null {
   try {
@@ -44,7 +51,7 @@ function passkeyError(error: unknown): Error {
   const name = (error as Error)?.name;
   if (name === "NotAllowedError") return new Error("The passkey was cancelled. Nothing was signed.");
   if (name === "InvalidStateError") return new Error("That passkey is already on this device.");
-  if (name === "SecurityError") return new Error("Passkeys work only on selfhold.app, or on localhost.");
+  if (name === "SecurityError") return new Error("Passkeys work only on wallet.selfhold.app, or on localhost.");
   return error as Error;
 }
 
@@ -55,7 +62,7 @@ function hold(key: Uint8Array, credential: string): Unlocked {
   return { address, key };
 }
 
-/** The key a passkey derives, asking for it (any of selfhold.app's passkeys unless `credential` names one). */
+/** The key a passkey derives, asking for it (any of the wallet's passkeys unless `credential` names one). */
 async function derive(credential?: string): Promise<{ key: Uint8Array; credential: string }> {
   let assertion: Credential | null;
   try {
