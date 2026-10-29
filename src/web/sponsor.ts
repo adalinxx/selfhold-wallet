@@ -5,7 +5,7 @@
 // `check` refuses anything else before the person's signature is added.
 
 import { transactionPayload, type TransactionBody } from "@adalin/lattice-core";
-import { gpuGrinder } from "./work/gpu.ts";
+import { gpuFailed, gpuGrinder } from "./work/gpu.ts";
 
 const SPONSOR_CLIENT = "selfhold.sponsorClient"; // + " <sponsor's origin>": a token earned at one sponsor is that sponsor's only
 // The longest this device works for one fee, expected at its pace: past it, the wallet asks for coins instead.
@@ -290,11 +290,12 @@ async function grind(url: string, work: Work, effort: { spent: number; hashes: n
 async function hasher(work: Work, found: (nonce: bigint) => void, hashed: (count: number) => void): Promise<{ done: Promise<unknown>; stop: () => void }> {
   const gpu = await gpuGrinder();
   if (gpu) {
-    const job = gpu.job(work.prefixHex, work.shareTarget);
     let stopped = false;
+    let next = BigInt(work.startNonce);
+    const end = next + BigInt(work.count);
+    let processor: { done: Promise<unknown>; stop: () => void } | null = null;
     const done = (async () => {
-      let next = BigInt(work.startNonce);
-      const end = next + BigInt(work.count);
+      const job = gpu.job(work.prefixHex, work.shareTarget);
       let batch = 1 << 16;
       try {
         while (!stopped && next < end) {
@@ -314,12 +315,22 @@ async function hasher(work: Work, found: (nonce: bigint) => void, hashed: (count
       } finally {
         job.close();
       }
-    })();
-    return { done, stop: () => (stopped = true) };
+    })().catch(async () => {
+      // The chip gave up partway: the rest of this work, and all after, on the processor.
+      gpuFailed();
+      if (stopped || next >= end) return;
+      processor = cores(work.prefixHex, work.shareTarget, next, end - next, found, hashed);
+      await processor.done;
+    });
+    return { done, stop: () => { stopped = true; processor?.stop(); } };
   }
+  return cores(work.prefixHex, work.shareTarget, BigInt(work.startNonce), BigInt(work.count), found, hashed);
+}
 
+/** Hashes nonces [start, start + total) on this device's processor cores, in workers. */
+function cores(prefixHex: string, targetHex: string, start: bigint, total: bigint, found: (nonce: bigint) => void, hashed: (count: number) => void) {
   const count = Math.max(1, Math.min(8, (navigator.hardwareConcurrency ?? 2) - 1));
-  const span = BigInt(work.count) / BigInt(count);
+  const span = total / BigInt(count);
   const workers: Worker[] = [];
   const done = Promise.all(Array.from({ length: count }, (_, i) => new Promise<void>((resolve, reject) => {
     const worker = new Worker(new URL("./work/worker.js", import.meta.url), { type: "module" });
@@ -329,7 +340,7 @@ async function hasher(work: Work, found: (nonce: bigint) => void, hashed: (count
       if (data.done) resolve();
     };
     worker.onerror = (event) => reject(new Error(event.message));
-    worker.postMessage({ prefixHex: work.prefixHex, targetHex: work.shareTarget, start: String(BigInt(work.startNonce) + BigInt(i) * span), count: String(span) });
+    worker.postMessage({ prefixHex, targetHex, start: String(start + BigInt(i) * span), count: String(span) });
     workers.push(worker);
   })));
   return { done, stop: () => workers.forEach((worker) => worker.terminate()) };
