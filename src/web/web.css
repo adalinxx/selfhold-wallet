@@ -8,3 +8,5 @@
 .work-steps li.done { color: var(--ink); }
 .work-steps li.now { color: var(--ink); font-weight: 600; }
 .work-steps li.done::after { content: " ✓"; }
+/* On the narrowest phones the decision's buttons stack, the approving one on top, instead of pushing past the screen. */
+@media (max-width: 380px) { .actions-row { flex-direction: column-reverse; } }
