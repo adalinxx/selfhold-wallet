@@ -58,8 +58,8 @@ const button = (text: string, onclick: () => void, primary = false) =>
 
 // ---------------------------------------------------------------- a site's call
 
-// A site on this computer may ask only a wallet on this computer: the published one takes https sites.
-const local = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+// A site over https, or one on this computer (a developer's, on localhost): shown as such, and approved as any other.
+const ON_THIS_COMPUTER = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 function serve(opener: Window, id: string) {
   let origin: string | null = null;
@@ -78,7 +78,7 @@ function serve(opener: Window, id: string) {
     if (origin !== null || event.source !== opener) return;
     const parsed = parseCall(event.data, id);
     if (!parsed) return;
-    if (!/^https:\/\//.test(event.origin) && !(local && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(event.origin))) return;
+    if (!/^https:\/\//.test(event.origin) && !ON_THIS_COMPUTER.test(event.origin)) return;
     origin = event.origin;
     if ("error" in parsed) return answer({ ok: false, error: parsed.error });
     const { call, route, account } = parsed;

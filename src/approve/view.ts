@@ -32,7 +32,10 @@ export const row = (key: string, ...value: (Node | string)[]) => el("div", { cla
 export function site(origin: string | null): HTMLElement {
   if (origin === null) return el("span", { className: "origin" }, el("strong", { textContent: "a pasted request" }));
   const url = new URL(origin);
-  return el("span", { className: "origin" }, ...(url.protocol === "https:" ? [] : [el("span", { className: "scheme", textContent: `${url.protocol}//` })]), el("strong", { textContent: url.host }));
+  const here = url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+  return el("span", { className: "origin" }, ...(url.protocol === "https:" ? [] : [el("span", { className: "scheme", textContent: `${url.protocol}//` })]), el("strong", { textContent: url.host }),
+    // A developer's page on this computer, say so: not a site on the web.
+    ...(here ? [el("span", { className: "meta", textContent: " (a site on this computer)" })] : []));
 }
 /** A whole address, four characters to a group, to compare a group at a time. Copied, it is unbroken. */
 export const fullAddress = (address: string) => el("span", { className: "groups" }, ...addressGroups(address).map((g) => el("span", { textContent: g })));

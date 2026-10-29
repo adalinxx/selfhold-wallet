@@ -56,12 +56,18 @@ export type Code =
   | "NotRecorded" // sent, and still not recorded after 30 minutes
   | "Failed"; // anything else: the message says what
 
+/** Where each code is explained, with what to do about it. */
+export const ERRORS_URL = "https://selfhold.app/docs/errors.html";
+
 export class SelfholdError extends Error {
   readonly code: Code;
+  /** This code's entry in the docs: its cause, and what to do. For the developer; `message` is for the person. */
+  readonly docUrl: string;
   constructor(code: Code, message: string) {
     super(message);
     this.name = "SelfholdError";
     this.code = code;
+    this.docUrl = `${ERRORS_URL}#${code}`;
   }
 }
 

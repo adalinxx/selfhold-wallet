@@ -16,7 +16,8 @@
     "watch": "node build.mjs --watch",
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/render-selfhold-icons.mjs",
-    "specimens": "node scripts/render-brand-specimens.mjs"
+    "specimens": "node scripts/render-brand-specimens.mjs",
+    "release:web": "node build-web.mjs --release"
   },
   "dependencies": {
     "@adalin/lattice-client": "file:vendor/lattice-sdk/packages/client",

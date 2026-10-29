@@ -116,3 +116,18 @@ test("only a wallet's own words or code make a failure a decline", async () => {
   assert.equal(asSelfholdError(Object.assign(new Error("whatever it says"), { code: "Declined" })).code, "Declined");
   assert.equal(asSelfholdError(new Error("Sent, but the node did not confirm it (rejected by peer); it may still land")).code, "Failed");
 });
+
+test("each kept release of @selfhold/web matches its integrity hash, so a site that pins one gets those bytes", async () => {
+  const { readdirSync, readFileSync, existsSync } = await import("node:fs");
+  const { createHash } = await import("node:crypto");
+  if (!existsSync("releases/web")) return;
+  for (const release of readdirSync("releases/web")) {
+    const bytes = readFileSync(`releases/web/${release}/selfhold.js`);
+    assert.equal(readFileSync(`releases/web/${release}/integrity.txt`, "utf8").trim(), `sha384-${createHash("sha384").update(bytes).digest("base64")}`, release);
+  }
+});
+
+test("a failure links to its code's entry in the docs", async () => {
+  const { SelfholdError } = await import("../src/web/client.ts");
+  assert.equal(new SelfholdError("PopupBlocked", "x").docUrl, "https://selfhold.app/docs/errors.html#PopupBlocked");
+});
