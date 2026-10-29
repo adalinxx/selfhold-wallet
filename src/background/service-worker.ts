@@ -263,7 +263,8 @@ async function signAndSend(request: Pending, write: WriteRequest, from: string, 
   }
   // Keep the pre-broadcast reservation even when delivery is uncertain.
   const outcome = delivered === "yes"
-    ? { ok: true, transactionCID: signedSubmit.transactionCID } as Response // the CID only: never bytes a page could send later
+    // The CID, and the nonce and node a site waits on: never bytes a page could send later.
+    ? { ok: true, transactionCID: signedSubmit.transactionCID, nonce, host: nodeURL } as Response
     : { ok: false, error: `Sent, but the node did not confirm it (${failure}); it may still land`, transactionCID: signedSubmit.transactionCID } as Response;
   request.settle(outcome);
   // Only a label: the write is sent whatever becomes of it.

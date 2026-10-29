@@ -122,16 +122,19 @@ async function oneAtATime<T>(run: () => Promise<T>, waiting: () => void, signal?
 }
 
 /**
- * Signs `write` with `key` and sends it as `quoted` said, returning its CID.
+ * Signs `write` with `key` and sends it as `quoted` said, returning its CID,
+ * its nonce, and the host it went to: a site waits on that nonce passing there.
  * Coins pay the fee only where the review said they might: when the sponsor
  * can't help (never when it changed the write) and the account covered it.
  * Once sent, a write is never sent again; once stopped, nothing is sent.
  */
-export function send(write: PageWriteRequest, owner: string, key: Uint8Array, route: Route, quoted: Quote, progress: (step: Progress) => void, signal?: AbortSignal): Promise<string> {
+export interface Sent { transactionCID: string; nonce: bigint; host: string }
+
+export function send(write: PageWriteRequest, owner: string, key: Uint8Array, route: Route, quoted: Quote, progress: (step: Progress) => void, signal?: AbortSignal): Promise<Sent> {
   return oneAtATime(() => sendNow(write, owner, key, route, quoted, progress, signal), () => progress({ stage: "queued" }), signal);
 }
 
-async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, route: Route, quoted: Quote, progress: (step: Progress) => void, signal?: AbortSignal): Promise<string> {
+async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, route: Route, quoted: Quote, progress: (step: Progress) => void, signal?: AbortSignal): Promise<Sent> {
   const at = await reach([quoted.host, ...route.hosts.filter((h) => h !== quoted.host)], write.chainPath, owner);
   const sentAt = sentKey(write.chainPath, owner);
   const nonce = sentNonce(sentAt, at.nonce);
@@ -151,7 +154,7 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
       throw new Error(`The host ${describe(error)}`);
     }
     rememberSent(sentAt, nonce + 1n);
-    return signed.transactionCID;
+    return { transactionCID: signed.transactionCID, nonce, host: at.host };
   };
 
   if (quoted.sponsored) {

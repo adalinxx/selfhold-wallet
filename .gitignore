@@ -4,3 +4,4 @@ dist-web/
 release/
 *.zip
 .DS_Store
+packages/web/dist/

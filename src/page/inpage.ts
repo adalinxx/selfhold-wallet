@@ -46,7 +46,11 @@ const lattice = Object.freeze({
     payments?: { to: string; amount: string }[];
     /** Omit it to pay the person's own default fee for the chain, shown for approval. */
     fee?: string;
-  }) => ({ transactionCID: (await request("writeRecords", params)).transactionCID as string }),
+  }) => {
+    const { transactionCID, nonce, host } = await request("writeRecords", params);
+    // The nonce and host say where to see it land; a wallet before 0.6 gives the CID only.
+    return { transactionCID: transactionCID as string, ...(typeof nonce === "string" && { nonce }), ...(typeof host === "string" && { host }) };
+  },
   /**
    * Hand the wallet a lattice://write request, to sign as whichever account
    * the person chooses in its window. Needs no connect(); call it from a click.

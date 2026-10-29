@@ -66,3 +66,36 @@ test("a sponsor may add only its fee debit and, when asked, its credit to the ac
     [signed([{ owner, delta: -1n }], { signers: [owner, owner] }), 0n], // the account pays its own fee
   ] as const) assert.throws(() => check(draft, bad, 1n, pay), /changed the transaction/);
 });
+
+test("a sent write is sent, then slow, then late, until it lands; three reads of another write in its place lose it", async () => {
+  const { waitFor, asSelfholdError, SelfholdError } = await import("../src/web/client.ts");
+  const times = { slow: 30, late: 60, giveUp: 200, every: 10, everyLate: 10 };
+  const states: string[] = [];
+  let reads = 0;
+  await waitFor(async () => ++reads >= 8, { onChange: (s) => states.push(s) }, undefined, times);
+  assert.deepEqual(states, ["sent", "slow", "late"]);
+
+  // One read of another write, then none: a lagging host, not a loss.
+  let n = 0;
+  await waitFor(async () => (++n === 1 ? "taken" : n > 3), {}, undefined, times);
+  n = 0;
+  await assert.rejects(waitFor(async () => (++n, "@ada is someone else's now"), {}, undefined, times), (e: InstanceType<typeof SelfholdError>) => e.code === "Lost" && /someone else's/.test(e.message));
+  await assert.rejects(waitFor(async () => false, {}, undefined, times), (e: InstanceType<typeof SelfholdError>) => e.code === "NotRecorded");
+
+  // Check again: a poke reads at once, not at the next turn.
+  let wake = () => {};
+  const slow = { ...times, every: 60_000 };
+  const done = waitFor(async () => true, {}, (now) => (wake = now), slow);
+  wake();
+  await done;
+
+  // Stopped by its signal.
+  const stop = new AbortController();
+  const stopped = waitFor(async () => false, { signal: stop.signal }, undefined, slow);
+  stop.abort(new Error("left the page"));
+  await assert.rejects(stopped, /left the page/);
+
+  assert.equal(asSelfholdError(new Error("The person declined")).code, "Declined");
+  assert.equal(asSelfholdError("The person just declined; ask again in a moment").code, "Declined");
+  assert.equal(asSelfholdError(new Error("Locked")).code, "Failed");
+});

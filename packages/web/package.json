@@ -1,0 +1,15 @@
+{
+  "name": "@selfhold/web",
+  "version": "1.0.0",
+  "description": "Selfhold for a site: connect, write records and sign with the person's Selfhold account, through Selfhold for Chrome or Selfhold's window",
+  "license": "MIT",
+  "type": "module",
+  "exports": { ".": { "types": "./dist/selfhold.d.ts", "default": "./dist/selfhold.js" } },
+  "main": "./dist/selfhold.js",
+  "types": "./dist/selfhold.d.ts",
+  "files": ["dist", "README.md"],
+  "sideEffects": false,
+  "repository": { "type": "git", "url": "git+https://github.com/adalinxx/selfhold-wallet.git", "directory": "packages/web" },
+  "homepage": "https://selfhold.app/developers.html",
+  "keywords": ["selfhold", "lattice", "wallet", "passkey"]
+}

@@ -71,7 +71,7 @@ function serve(opener: Window, id: string) {
     reply({ response });
     if (close) setTimeout(() => window.close(), response.ok ? 900 : 0);
   };
-  const decline = () => answer({ ok: false, error: "The person declined" });
+  const decline = () => answer({ ok: false, code: "Declined", error: "The person declined" });
   // Closing the window is declining: the site hears it from the window being gone.
 
   window.addEventListener("message", (event) => {
@@ -245,11 +245,11 @@ async function review(origin: string, address: string, write: PageWriteRequest, 
     const screen = working(quoted, route, device, () => stopping.abort());
     const tell = (step: Progress) => { screen.update(step); progress(words(step)); };
     try {
-      const transactionCID = await send(write, address, key, route, quoted, tell, stopping.signal);
-      answer({ ok: true, transactionCID, address });
+      const sent = await send(write, address, key, route, quoted, tell, stopping.signal);
+      answer({ ok: true, transactionCID: sent.transactionCID, address, nonce: String(sent.nonce), host: sent.host });
       show(el("h1", { textContent: "Sent" }), say("You can close this window."));
     } catch (error) {
-      if (error instanceof Stopped) return answer({ ok: false, error: "The person declined" });
+      if (error instanceof Stopped) return answer({ ok: false, code: "Declined", error: "The person declined" });
       const needs = error instanceof NeedsCoins
         ? { code: "NeedsCoins", address: error.address, needed: String(error.needed), balance: String(error.balance), sponsor: error.sponsor } : {};
       answer({ ok: false, error: message(error), ...needs }, false);
