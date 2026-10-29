@@ -4,7 +4,8 @@
 // Run: `node build-web.mjs` (add --watch to watch).
 import * as esbuild from "esbuild";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
 const watch = process.argv.includes("--watch");
 const outdir = "dist-web";
@@ -41,5 +42,17 @@ if (watch) {
   // The package's types, from the same source.
   execFileSync("npx", ["tsc", "src/web/client.ts", "--declaration", "--emitDeclarationOnly", "--target", "es2022", "--lib", "es2022,dom", "--skipLibCheck", "--outDir", "packages/web/dist"], { stdio: "inherit" });
   renameSync("packages/web/dist/client.d.ts", "packages/web/dist/selfhold.d.ts");
+  // Each release of @selfhold/web, kept at its own address for good: /v<version>/selfhold.js, never changed once made.
+  const { version } = JSON.parse(readFileSync("packages/web/package.json", "utf8"));
+  const built = readFileSync(`${outdir}/v1/selfhold.js`);
+  const release = `releases/web/v${version}`;
+  if (process.argv.includes("--release")) {
+    // Sites pin a release by its hash: once made, it is never made again. A change is a new version.
+    if (existsSync(release)) throw new Error(`${release} exists: bump packages/web/package.json for a new release`);
+    mkdirSync(release, { recursive: true });
+    writeFileSync(`${release}/selfhold.js`, built);
+    writeFileSync(`${release}/integrity.txt`, `sha384-${createHash("sha384").update(built).digest("base64")}\n`);
+  }
+  if (existsSync("releases/web")) cpSync("releases/web", outdir, { recursive: true });
   console.log("built -> dist-web/, packages/web/dist/");
 }

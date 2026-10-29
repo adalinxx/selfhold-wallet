@@ -132,10 +132,12 @@ Every failure is a `SelfholdError` with a `code`, and a `message` you can show t
 
 ## Checklist
 
-- Serve your page over https. A page on `localhost` may use a local copy of the window, for tests.
+- Serve your page over https. While you develop, `http://localhost` and `http://127.0.0.1` work too: Selfhold's window shows them as "a site on this computer".
 - Don't send `Cross-Origin-Opener-Policy: same-origin`: it cuts your page off from the window. `same-origin-allow-popups` is fine.
 - On iPhone, Selfhold's window opens as a tab. People come back to your tab when it's done.
 
 ## License
+
+The full guide: https://selfhold.app/developers.html
 
 MIT. Source: https://github.com/adalinxx/selfhold-wallet/tree/main/packages/web
