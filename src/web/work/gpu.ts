@@ -91,6 +91,11 @@ export function gpuGrinder(): Promise<GpuGrinder | null> {
   return ready;
 }
 
+/** The chip failed at its work (a phone's watchdog, a driver that can't run the shader): the processor's from now on, here. */
+export function gpuFailed() {
+  ready = Promise.resolve(null);
+}
+
 async function open(): Promise<GpuGrinder | null> {
   const adapter: GPUObject = await (navigator as unknown as { gpu?: GPUObject }).gpu?.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) return null;
