@@ -89,7 +89,7 @@ test("pages connect and write only through the person's approval", async () => {
   const closed = page(writeCall);
   await new Promise((r) => setTimeout(r, 10));
   onWindowClosed(opened.length);
-  assert.deepEqual(await closed, { ok: false, error: "The person declined" });
+  assert.deepEqual(await closed, { ok: false, code: "Declined", error: "The person declined" });
   assert.equal((await approval({ type: "pending", id: requestId() })).ok, false, "the request is gone");
 
   // A site just declined waits before it can ask again.
@@ -112,7 +112,9 @@ test("pages connect and write only through the person's approval", async () => {
   assert.deepEqual(await approval({ type: "decide", id, approve: true, ...read }), { ok: true });
   const signed = await writing;
   assert.ok(signed.ok);
-  assert.deepEqual(Object.keys(signed).sort(), ["ok", "transactionCID"], "the page gets the CID, never the signed bytes");
+  // The CID, and the nonce and node to see it land at: never the signed bytes.
+  assert.deepEqual(Object.keys(signed).sort(), ["host", "nonce", "ok", "transactionCID"], "the page gets the CID, never the signed bytes");
+  assert.deepEqual([signed.nonce, signed.host], [read.nonce, read.node]);
   const body = submitted.at(-1)!.body.transaction.body; // what the node received
   assert.deepEqual(body.signers, [address]);
   assert.deepEqual(body.accountActions, [{ owner: address, delta: "-1" }]);
@@ -229,7 +231,7 @@ test("pages connect and write only through the person's approval", async () => {
   const declinedMessage = page({ method: "signMessage", params: { text } });
   await new Promise((r) => setTimeout(r, 10));
   onWindowClosed(opened.length);
-  assert.deepEqual(await declinedMessage, { ok: false, error: "The person declined" });
+  assert.deepEqual(await declinedMessage, { ok: false, code: "Declined", error: "The person declined" });
   assert.equal(submitted.length, sent, "a message is never sent anywhere");
   skew += 6000;
   assert.equal((await page({ method: "signMessage", params: { text: "a\u202eb" } })).error, "A message may hold only printable text and line breaks");
@@ -268,7 +270,7 @@ test("pages connect and write only through the person's approval", async () => {
   assert.match(String((await approval({ type: "decide", id: requestId(), approve: true, ...filled, address: holder })).error), /pays the account you chose/);
   assert.deepEqual(await approval({ type: "decide", id: requestId(), approve: true, ...filled, address }), { ok: true });
   const done = await opening;
-  assert.deepEqual(Object.keys(done).sort(), ["ok", "transactionCID"]);
+  assert.deepEqual(Object.keys(done).sort(), ["host", "nonce", "ok", "transactionCID"]);
   const openedBody = submitted.at(-1)!.body.transaction.body;
   assert.deepEqual(openedBody.signers, [address], "signed as the account chosen, with no connection");
   assert.deepEqual(openedBody.accountActions, [{ owner: address, delta: "-7" }, { owner: holder, delta: "5" }], "the fee the window showed");

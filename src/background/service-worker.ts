@@ -55,7 +55,7 @@ const DECLINE_PAUSE_MS = 5000;
 const declinedAt = new Map<string, number>();
 function declined(request: Pending) {
   if (request.origin !== null) declinedAt.set(request.origin, Date.now());
-  request.settle({ ok: false, error: "The person declined" });
+  request.settle({ ok: false, code: "Declined", error: "The person declined" });
 }
 const connections = async (): Promise<Record<string, string>> =>
   ((await store.get("connections")).connections as Record<string, string> | undefined) ?? {};
@@ -234,6 +234,21 @@ async function decideNow(msg: { type: string; id?: string; approve?: boolean; ad
   }
 }
 
+/** Whether `url` is a public https host a site may be told of and read from: not loopback, LAN or link-local. */
+function publicHost(url: string): boolean {
+  let hostname: string;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    hostname = parsed.hostname;
+  } catch {
+    return false;
+  }
+  if (hostname.startsWith("[")) return false; // an IPv6 literal: the person's own machine or network
+  if (hostname === "localhost" || /\.(local|localhost|internal|lan|home\.arpa)$/i.test(hostname)) return false;
+  return !/^(127|10|0)\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\.|^169\.254\.|^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(hostname);
+}
+
 async function signAndSend(request: Pending, write: WriteRequest, from: string, chain: string, nonce: string, nodeURL: string, passed: bigint): Promise<Response> {
   const signed = await signer.handle({ type: "signRecords", from, ...write, nonce });
   if (!signed.ok) { request.approved = false; return signed; } // e.g. locked: the window unlocks and tries again
@@ -263,7 +278,9 @@ async function signAndSend(request: Pending, write: WriteRequest, from: string, 
   }
   // Keep the pre-broadcast reservation even when delivery is uncertain.
   const outcome = delivered === "yes"
-    ? { ok: true, transactionCID: signedSubmit.transactionCID } as Response // the CID only: never bytes a page could send later
+    // The CID, and the nonce and node a site waits on: never bytes a page could send later,
+    // and the node only if it is a public one: a person's own (loopback, LAN) stays theirs.
+    ? { ok: true, transactionCID: signedSubmit.transactionCID, nonce, ...(publicHost(nodeURL) && { host: nodeURL }) } as Response
     : { ok: false, error: `Sent, but the node did not confirm it (${failure}); it may still land`, transactionCID: signedSubmit.transactionCID } as Response;
   request.settle(outcome);
   // Only a label: the write is sent whatever becomes of it.

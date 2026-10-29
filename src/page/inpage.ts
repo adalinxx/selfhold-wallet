@@ -17,7 +17,8 @@ window.addEventListener("message", (event) => {
   if (!call) return;
   waiting.delete(data.id);
   if (data.response?.ok) call.resolve(data.response);
-  else call.reject(new Error(data.response?.error ?? "The wallet did not answer"));
+  // With the wallet's code, where it gives one ("Declined"), for a site to act on.
+  else call.reject(Object.assign(new Error(data.response?.error ?? "The wallet did not answer"), typeof data.response?.code === "string" ? { code: data.response.code } : {}));
 });
 
 function request(method: string, params?: unknown): Promise<Record<string, unknown>> {
@@ -46,7 +47,11 @@ const lattice = Object.freeze({
     payments?: { to: string; amount: string }[];
     /** Omit it to pay the person's own default fee for the chain, shown for approval. */
     fee?: string;
-  }) => ({ transactionCID: (await request("writeRecords", params)).transactionCID as string }),
+  }) => {
+    const { transactionCID, nonce, host } = await request("writeRecords", params);
+    // The nonce and host say where to see it land; a wallet before 0.6 gives the CID only.
+    return { transactionCID: transactionCID as string, ...(typeof nonce === "string" && { nonce }), ...(typeof host === "string" && { host }) };
+  },
   /**
    * Hand the wallet a lattice://write request, to sign as whichever account
    * the person chooses in its window. Needs no connect(); call it from a click.

@@ -114,5 +114,5 @@ export type Request =
     };
 
 export type Ok<T = object> = { ok: true } & T;
-export type Err = { ok: false; error: string };
+export type Err = { ok: false; error: string; code?: string };
 export type Response<T = object> = Ok<T> | Err;
