@@ -3,7 +3,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CHANNEL, MAX_HOSTS, parseCall, parseRoute } from "../src/web/protocol.ts";
+import { CHANNEL, MAX_HOSTS, answers, parseCall, parseRoute } from "../src/web/protocol.ts";
 import { check } from "../src/web/sponsor.ts";
 import { rpId } from "../src/web/account.ts";
 import { recordsBody } from "../src/lib/wallet/session.ts";
@@ -121,7 +121,7 @@ test("each kept release of @selfhold/web matches its integrity hash, so a site t
   const { readdirSync, readFileSync, existsSync } = await import("node:fs");
   const { createHash } = await import("node:crypto");
   if (!existsSync("releases/web")) return;
-  for (const release of readdirSync("releases/web")) {
+  for (const release of readdirSync("releases/web").filter((name) => /^v\d+\.\d+\.\d+$/.test(name))) {
     const bytes = readFileSync(`releases/web/${release}/selfhold.js`);
     assert.equal(readFileSync(`releases/web/${release}/integrity.txt`, "utf8").trim(), `sha384-${createHash("sha384").update(bytes).digest("base64")}`, release);
   }
@@ -131,3 +131,9 @@ test("a failure links to its code's entry in the docs", async () => {
   const { SelfholdError } = await import("../src/web/client.ts");
   assert.equal(new SelfholdError("PopupBlocked", "x").docUrl, "https://selfhold.app/docs/errors.html#PopupBlocked");
 });
+
+test("the window answers https sites and pages on this computer, and nothing else", () => {
+  for (const origin of ["https://app.example", "https://localhost", "http://localhost", "http://localhost:8000", "http://127.0.0.1:5173"]) assert.ok(answers(origin), origin);
+  for (const origin of ["http://app.example", "http://localhost.evil.com", "http://localhost:", "http://127.0.0.1.", "http://[::1]:8000", "http://app.localhost", "null", "file://", "chrome-extension://abc", "http://user@localhost", "https://"]) assert.ok(!answers(origin), origin);
+});
+

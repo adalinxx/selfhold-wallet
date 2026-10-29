@@ -17,7 +17,7 @@ import { signMessage } from "../lib/wallet/session.ts";
 import type { PageWriteRequest } from "../lib/wallet/provider.ts";
 import { el, fmt, fullAddress, label, named, notice, row, site, valueNode, visible } from "../approve/view.ts";
 import { RP_ID, create, forget, saved, signIn, unlock, type Unlocked } from "./account.ts";
-import { CHANNEL, parseCall, type SiteRoute, type WindowCall } from "./protocol.ts";
+import { CHANNEL, parseCall, type SiteRoute, type WindowCall, answers } from "./protocol.ts";
 import { NeedsCoins, quote, send, type Progress, type Quote, type Route } from "./send.ts";
 import { EXTENSION_ID } from "../lib/web-wallet.ts";
 import { Stopped, workDevice } from "./sponsor.ts";
@@ -58,8 +58,6 @@ const button = (text: string, onclick: () => void, primary = false) =>
 
 // ---------------------------------------------------------------- a site's call
 
-// A site over https, or one on this computer (a developer's, on localhost): shown as such, and approved as any other.
-const ON_THIS_COMPUTER = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 function serve(opener: Window, id: string) {
   let origin: string | null = null;
@@ -78,7 +76,8 @@ function serve(opener: Window, id: string) {
     if (origin !== null || event.source !== opener) return;
     const parsed = parseCall(event.data, id);
     if (!parsed) return;
-    if (!/^https:\/\//.test(event.origin) && !ON_THIS_COMPUTER.test(event.origin)) return;
+    // A site over https, or a developer's on this computer: shown as such, and approved as any other.
+    if (!answers(event.origin)) return;
     origin = event.origin;
     if ("error" in parsed) return answer({ ok: false, error: parsed.error });
     const { call, route, account } = parsed;

@@ -47,6 +47,8 @@ if (watch) {
   const built = readFileSync(`${outdir}/v1/selfhold.js`);
   const release = `releases/web/v${version}`;
   if (process.argv.includes("--release")) {
+    // Sites pin a release by its hash: once made, it is never made again. A change is a new version.
+    if (existsSync(release)) throw new Error(`${release} exists: bump packages/web/package.json for a new release`);
     mkdirSync(release, { recursive: true });
     writeFileSync(`${release}/selfhold.js`, built);
     writeFileSync(`${release}/integrity.txt`, `sha384-${createHash("sha384").update(built).digest("base64")}\n`);

@@ -12,6 +12,9 @@ import { parseProviderCall, type ProviderCall } from "../lib/wallet/provider.ts"
 import { normalizeNodeURL } from "../lib/config.ts";
 
 export const CHANNEL = "selfhold";
+
+/** A site the window answers: one over https, or a developer's page on this computer (http://localhost or 127.0.0.1, any port). */
+export const answers = (origin: string) => /^https:\/\/[^/]+$/.test(origin) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 export const MAX_HOSTS = 8;
 
 /** The calls a site may make of the window: those that need the person. */
