@@ -24,7 +24,8 @@ const contexts = [
   await esbuild.context({ ...options, entryPoints: { wallet: "src/web/wallet.ts", "work/worker": "src/web/work/worker.ts" }, minify: !watch }),
   // What a site loads: small, and kept readable, so it can see what it runs.
   // At /v1/selfhold.js for protocol 1, and at /selfhold.js for sites that load it from before.
-  await esbuild.context({ ...options, entryPoints: { selfhold: "src/web/client.ts", "v1/selfhold": "src/web/client.ts" } }),
+  // /selfhold.js keeps to Selfhold's window, as those sites expect.
+  await esbuild.context({ ...options, entryPoints: { selfhold: "src/web/client-legacy.ts", "v1/selfhold": "src/web/client.ts" } }),
   // And as the npm package @selfhold/web, in packages/web/.
   await esbuild.context({ ...options, outdir: "packages/web/dist", entryPoints: { selfhold: "src/web/client.ts" } }),
 ];

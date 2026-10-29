@@ -69,7 +69,7 @@ test("a sponsor may add only its fee debit and, when asked, its credit to the ac
 
 test("a sent write is sent, then slow, then late, until it lands; three reads of another write in its place lose it", async () => {
   const { waitFor, asSelfholdError, SelfholdError } = await import("../src/web/client.ts");
-  const times = { slow: 30, late: 60, giveUp: 200, every: 10, everyLate: 10 };
+  const times = { slow: 30, late: 60, giveUp: 200, every: 10, everyLate: 10, read: 1000 };
   const states: string[] = [];
   let reads = 0;
   await waitFor(async () => ++reads >= 8, { onChange: (s) => states.push(s) }, undefined, times);
@@ -98,4 +98,21 @@ test("a sent write is sent, then slow, then late, until it lands; three reads of
   assert.equal(asSelfholdError(new Error("The person declined")).code, "Declined");
   assert.equal(asSelfholdError("The person just declined; ask again in a moment").code, "Declined");
   assert.equal(asSelfholdError(new Error("Locked")).code, "Failed");
+});
+
+test("a read that hangs is given up on and asked again, so the wait still goes slow and late", async () => {
+  const { waitFor } = await import("../src/web/client.ts");
+  const times = { slow: 30, late: 60, giveUp: 120, every: 5, everyLate: 5, read: 10 };
+  const states: string[] = [];
+  let reads = 0;
+  // Every read hangs: the wait still moves on, and gives up in the end.
+  await assert.rejects(waitFor(() => (reads++, new Promise(() => {})), { onChange: (s) => states.push(s) }, undefined, times), (e: { code?: string }) => e.code === "NotRecorded");
+  assert.deepEqual(states, ["sent", "slow", "late"]);
+  assert.ok(reads > 3);
+});
+
+test("only a wallet's own words or code make a failure a decline", async () => {
+  const { asSelfholdError } = await import("../src/web/client.ts");
+  assert.equal(asSelfholdError(Object.assign(new Error("whatever it says"), { code: "Declined" })).code, "Declined");
+  assert.equal(asSelfholdError(new Error("Sent, but the node did not confirm it (rejected by peer); it may still land")).code, "Failed");
 });

@@ -104,7 +104,7 @@ Writes records on one chain, and pays addresses from the account in the same tra
 - `wait({ onChange?, check?, signal? })` resolves once the write lands.
   - States, in order: `"sent"`, `"slow"` after 30 seconds, `"late"` after 5 minutes.
   - It rejects with `NotRecorded` after 30 minutes.
-  - By default the write has landed once the account's nonce passes it.
+  - By default the write has landed once the account's nonce passes it, read from the host the write went to and your `hosts`. That can't tell this write from another the same account signed at the same nonce elsewhere, so where that matters, pass a `check`.
   - Pass `check: async () => true | false | "why"` to decide from your own state instead. Return a string when another write landed in its place: after three reads that agree, `wait` rejects with `Lost` and that string.
 - `checkNow()` checks at once. Use it for a "Check again" button on a late write.
 

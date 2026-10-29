@@ -17,7 +17,8 @@ window.addEventListener("message", (event) => {
   if (!call) return;
   waiting.delete(data.id);
   if (data.response?.ok) call.resolve(data.response);
-  else call.reject(new Error(data.response?.error ?? "The wallet did not answer"));
+  // With the wallet's code, where it gives one ("Declined"), for a site to act on.
+  else call.reject(Object.assign(new Error(data.response?.error ?? "The wallet did not answer"), typeof data.response?.code === "string" ? { code: data.response.code } : {}));
 });
 
 function request(method: string, params?: unknown): Promise<Record<string, unknown>> {

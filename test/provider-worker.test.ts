@@ -89,7 +89,7 @@ test("pages connect and write only through the person's approval", async () => {
   const closed = page(writeCall);
   await new Promise((r) => setTimeout(r, 10));
   onWindowClosed(opened.length);
-  assert.deepEqual(await closed, { ok: false, error: "The person declined" });
+  assert.deepEqual(await closed, { ok: false, code: "Declined", error: "The person declined" });
   assert.equal((await approval({ type: "pending", id: requestId() })).ok, false, "the request is gone");
 
   // A site just declined waits before it can ask again.
@@ -231,7 +231,7 @@ test("pages connect and write only through the person's approval", async () => {
   const declinedMessage = page({ method: "signMessage", params: { text } });
   await new Promise((r) => setTimeout(r, 10));
   onWindowClosed(opened.length);
-  assert.deepEqual(await declinedMessage, { ok: false, error: "The person declined" });
+  assert.deepEqual(await declinedMessage, { ok: false, code: "Declined", error: "The person declined" });
   assert.equal(submitted.length, sent, "a message is never sent anywhere");
   skew += 6000;
   assert.equal((await page({ method: "signMessage", params: { text: "a\u202eb" } })).error, "A message may hold only printable text and line breaks");

@@ -114,7 +114,7 @@ export interface Sent {
 }
 
 /** How long a write may take before it is "slow", "late", or given up on; and how often it is checked. */
-export const TIMES = { slow: 30_000, late: 300_000, giveUp: 1_800_000, every: 2_500, everyLate: 15_000 };
+export const TIMES = { slow: 30_000, late: 300_000, giveUp: 1_800_000, every: 2_500, everyLate: 15_000, read: 20_000 };
 /** Reads agreeing another write landed in this one's place before it is lost: a lagging host can mislead one. */
 const LOST_READS = 3;
 
@@ -134,8 +134,11 @@ const CODES = new Set<string>(["PopupBlocked", "Closed", "Declined", "Reloaded",
 export function asSelfholdError(error: unknown): SelfholdError {
   if (error instanceof SelfholdError) return error;
   const text = String((error as Error)?.message ?? error);
-  if (/just declined|ask again in a moment/i.test(text)) return new SelfholdError("Declined", "The wallet waits a few seconds after a decline. Try again in a moment.");
-  if (/declined|rejected|denied/i.test(text)) return new SelfholdError("Declined", "You declined it in the wallet. Nothing was sent.");
+  const code = (error as { code?: unknown })?.code;
+  if (typeof code === "string" && CODES.has(code)) return new SelfholdError(code as Code, text);
+  // The wallets' own words for a decline, never a node's text that happens to say "rejected".
+  if (/^The person just declined/.test(text)) return new SelfholdError("Declined", "The wallet waits a few seconds after a decline. Try again in a moment.");
+  if (/^The person declined/.test(text)) return new SelfholdError("Declined", "You declined it in the wallet. Nothing was sent.");
   return new SelfholdError("Failed", text);
 }
 
@@ -161,7 +164,12 @@ export async function waitFor(
     if (signal?.aborted) throw signal.reason;
     let result: boolean | string = false;
     try {
-      result = await landed();
+      // A read that hangs is given up on, and asked again: a stuck host never stops the wait.
+      result = await new Promise<boolean | string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("no answer")), times.read);
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        landed().then(resolve, reject).finally(() => clearTimeout(timer));
+      });
     } catch {} // a host that didn't answer is asked again
     if (result === true) return;
     lost = typeof result === "string" ? lost + 1 : 0;
@@ -173,19 +181,31 @@ export async function waitFor(
   }
 }
 
-/** Whether `account`'s nonce on `chainPath` has passed `nonce` at one of `hosts`, read fresh. */
+/**
+ * Whether `account`'s nonce on `chainPath` has passed `nonce` at any of
+ * `hosts`, read fresh. A host that doesn't serve the chain, or doesn't know
+ * the account yet, answers 404: the next is asked. It can't tell this write
+ * from another the account signed at the same nonce elsewhere: pass wait() a
+ * check for that.
+ */
 async function nonceLanded(hosts: string[], account: string, chainPath: string[], nonce: bigint): Promise<boolean> {
+  let answered = false;
   let error: unknown = new Error("No host to read the account from");
   for (const host of hosts) {
     try {
-      const response = await fetch(`${host.replace(/\/+$/, "")}/api/state/account/${account}?chainPath=${chainPath.join("/")}`, { cache: "no-store" });
-      if (response.status === 404) return false; // no account there yet
+      const response = await fetch(`${host.replace(/\/+$/, "")}/api/state/account/${account}?chainPath=${chainPath.join("/")}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+      if (response.status === 404) {
+        answered = true;
+        continue;
+      }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return BigInt((await response.json()).nonce ?? 0) > nonce;
+      answered = true;
+      if (BigInt((await response.json()).nonce ?? 0) > nonce) return true;
     } catch (e) {
       error = e;
     }
   }
+  if (answered) return false;
   throw error;
 }
 
@@ -299,6 +319,7 @@ export function selfhold(options: Options = {}) {
         if (!landed) {
           if (nonce === undefined) throw new SelfholdError("Failed", "This wallet doesn't say its write's nonce: pass wait() a check.");
           const hosts = [...new Set([...(host ? [host] : []), ...(options.hosts ? await options.hosts() : [])])];
+          if (!hosts.length) throw new SelfholdError("Failed", "No host to watch this write at: give selfhold() hosts, or wait() a check.");
           landed = () => nonceLanded(hosts, account, chainPath, BigInt(nonce));
         }
         let now: (() => void) | null = null;
