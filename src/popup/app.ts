@@ -994,9 +994,12 @@ function endpointScreen() {
     err.textContent = "discovering…";
     found.replaceChildren();
     try {
-      // Found automatically, the node in the field is one of several asked:
-      // one node's search can come back empty when another's finds hosts.
-      const starts = autoSelect ? [...new Set([n, ...discoveryStarts(settings)])] : n;
+      // Found automatically from a node the wallet would start from anyway,
+      // the others are asked too: one node's search can come back empty when
+      // another's finds hosts. A node the user typed is asked alone, as the
+      // one they trust to start from.
+      const defaults = discoveryStarts(settings);
+      const starts = autoSelect && defaults.includes(n) ? defaults : n;
       const list = await declaredHosts(starts, chainPath(), platform.fetch);
       err.textContent = list.length ? "" : "No declared node serves this chain.";
       if (autoSelect) {

@@ -518,8 +518,22 @@ test("discovery moves on from a Nexus node that finds no hosts", async () => {
     const found = await declaredHosts(["https://misses.example", "https://finds.example"], ["Nexus", "A"], fetch, random);
     assert.deepEqual(found.map((e) => e.url), ["https://a1.example"]);
   }
-  // Every node that answered found none: none, not an error.
+  // Every node asked found none: none, not an error.
   assert.deepEqual(await declaredHosts(["https://misses.example"], ["Nexus", "A"], fetch), []);
+});
+
+test("discovery that finds no hosts on one node and fails on another reports the failure", async () => {
+  const { fetch } = scripted((url) => {
+    const host = url.host, path = url.pathname, chain = url.searchParams.get("chainPath");
+    if (host === "down.example") throw new TypeError("Failed to fetch");
+    if (path === "/api/chain/endpoints" && chain === "Nexus/A") {
+      return { status: 200, body: { chainPath: ["Nexus", "A"], endpoints: [] } };
+    }
+    if (host === "misses.example") return serves(url, "Nexus");
+  });
+  for (const random of [() => 0, () => 0.75]) {
+    await assert.rejects(declaredHosts(["https://misses.example", "https://down.example"], ["Nexus", "A"], fetch, random));
+  }
 });
 
 test("a submission is held to the CID the wallet computed", async () => {
