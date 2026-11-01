@@ -931,7 +931,7 @@ function endpointScreen() {
     }
     hosted.push(
       h("button", { class: hosted.length ? "btn block" : "btn btn--primary block", onclick: () => discoverFrom(true) }, "Find node automatically"),
-      h("p", { class: "muted" }, "Asks the Lattice explorer's Nexus service which nodes serve this chain and picks one that accepts transactions. The first time, Chrome asks to let the wallet reach any HTTPS node, since the nodes a chain names are only known as it looks."),
+      h("p", { class: "muted" }, "Asks Lattice's public Nexus nodes which nodes serve this chain and picks one that accepts transactions. The first time, Chrome asks to let the wallet reach any HTTPS node, since the nodes a chain names are only known as it looks."),
     );
   }
   const pairing = platform.pairOrigin
@@ -994,7 +994,13 @@ function endpointScreen() {
     err.textContent = "discovering…";
     found.replaceChildren();
     try {
-      const list = await declaredHosts(n, chainPath(), platform.fetch);
+      // Found automatically from a node the wallet would start from anyway,
+      // the others are asked too: one node's search can come back empty when
+      // another's finds hosts. A node the user typed is asked alone, as the
+      // one they trust to start from.
+      const defaults = discoveryStarts(settings);
+      const starts = autoSelect && defaults.includes(n) ? defaults : n;
+      const list = await declaredHosts(starts, chainPath(), platform.fetch);
       err.textContent = list.length ? "" : "No declared node serves this chain.";
       if (autoSelect) {
         const candidates = spread(list.filter((endpoint) => endpoint.declaresSubmit));

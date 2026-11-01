@@ -503,6 +503,39 @@ test("discovery from several Nexus nodes moves on when one fails", async () => {
   }
 });
 
+test("discovery moves on from a Nexus node that finds no hosts", async () => {
+  const { fetch } = scripted((url) => {
+    const host = url.host, path = url.pathname, chain = url.searchParams.get("chainPath");
+    if (path === "/api/chain/endpoints" && chain === "Nexus/A") {
+      // A node whose search for A's hosts missed its deadline answers none.
+      const endpoints = host === "finds.example" ? ["https://a1.example"] : [];
+      return { status: 200, body: { chainPath: ["Nexus", "A"], endpoints } };
+    }
+    if (host === "misses.example" || host === "finds.example") return serves(url, "Nexus");
+    if (host === "a1.example") return serves(url, "Nexus/A");
+  });
+  for (const random of [() => 0, () => 0.75]) {
+    const found = await declaredHosts(["https://misses.example", "https://finds.example"], ["Nexus", "A"], fetch, random);
+    assert.deepEqual(found.map((e) => e.url), ["https://a1.example"]);
+  }
+  // Every node asked found none: none, not an error.
+  assert.deepEqual(await declaredHosts(["https://misses.example"], ["Nexus", "A"], fetch), []);
+});
+
+test("discovery that finds no hosts on one node and fails on another reports the failure", async () => {
+  const { fetch } = scripted((url) => {
+    const host = url.host, path = url.pathname, chain = url.searchParams.get("chainPath");
+    if (host === "down.example") throw new TypeError("Failed to fetch");
+    if (path === "/api/chain/endpoints" && chain === "Nexus/A") {
+      return { status: 200, body: { chainPath: ["Nexus", "A"], endpoints: [] } };
+    }
+    if (host === "misses.example") return serves(url, "Nexus");
+  });
+  for (const random of [() => 0, () => 0.75]) {
+    await assert.rejects(declaredHosts(["https://misses.example", "https://down.example"], ["Nexus", "A"], fetch, random));
+  }
+});
+
 test("a submission is held to the CID the wallet computed", async () => {
   const signer = importPrivateKey("11".repeat(32));
   const signed = signTransfer(signer, { to: importPrivateKey("22".repeat(32)).address, amount: 5n, fee: 1n, nonce: 0n, chainPath: ["Nexus"] });

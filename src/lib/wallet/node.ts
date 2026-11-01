@@ -334,9 +334,12 @@ export function spread<T>(items: readonly T[], random: () => number = Math.rando
 /**
  * The hosts that declare `chainPath`, walked down from a Nexus node: the one
  * the user chose, or one of the defaults, begun at a random one and the next
- * when it fails. Each host serves the chain at that path on that node's
- * network (the SDK's rule; what a parent commits does not decide). Listed in
- * declared order, with what each declares about submission.
+ * when it fails or finds none: a node's search for a chain's hosts can miss
+ * its deadline, which is no news that there are none. Each host serves the
+ * chain at that path on that node's network (the SDK's rule; what a parent
+ * commits does not decide). Listed in declared order, with what each
+ * declares about submission. Empty only when every node asked answered
+ * and found none: a failure alongside empty answers is the failure.
  */
 export async function declaredHosts(
   start: string | readonly string[],
@@ -347,12 +350,14 @@ export async function declaredHosts(
   let failure: { reason: unknown } | undefined;
   for (const startURL of spread(typeof start === "string" ? [start] : start, random)) {
     try {
-      return await new EndpointResolver(reader(startURL, [ROOT_CHAIN], fetchImpl), { fetch: fetchImpl }).resolve(chainPath);
+      const found = await new EndpointResolver(reader(startURL, [ROOT_CHAIN], fetchImpl), { fetch: fetchImpl }).resolve(chainPath);
+      if (found.length) return found;
     } catch (error) {
       failure ??= { reason: error };
     }
   }
-  throw failure!.reason;
+  if (!failure) return [];
+  throw failure.reason;
 }
 /** The nodes to read a chain from, in turns, starting at `start` (the SDK's round-robin list). */
 export function chainNodes(start: string | readonly string[], fetchImpl: Fetch = browserFetch): ChainNodes {
