@@ -87,20 +87,20 @@ export async function quote(write: PageWriteRequest, owner: string, route: Route
 const SENT_FOR_MS = 10 * 60_000;
 const SENT_AHEAD = 8n;
 const sentKey = (chainPath: readonly string[], owner: string) => `${chainPath.join("/")} ${owner}`;
-function sentNonce(key: string, chainNonce: bigint): { nonce: bigint; held?: string } {
+function sentNonce(key: string, chainNonce: bigint): { nonce: bigint; held?: string; host?: string } {
   try {
     const sent = JSON.parse(localStorage.getItem(SENT) ?? "{}")[key];
     if (!sent || Date.now() - sent.at > SENT_FOR_MS) return { nonce: chainNonce };
     const next = BigInt(sent.next);
-    return next > chainNonce && next - chainNonce <= SENT_AHEAD ? { nonce: next, held: sent.cid } : { nonce: chainNonce };
+    return next > chainNonce && next - chainNonce <= SENT_AHEAD ? { nonce: next, held: sent.cid, host: sent.host } : { nonce: chainNonce };
   } catch {
     return { nonce: chainNonce };
   }
 }
-function rememberSent(key: string, next: bigint, cid: string) {
+function rememberSent(key: string, next: bigint, cid: string, host: string) {
   try {
     const all = JSON.parse(localStorage.getItem(SENT) ?? "{}");
-    localStorage.setItem(SENT, JSON.stringify({ ...all, [key]: { next: String(next), cid, at: Date.now() } }));
+    localStorage.setItem(SENT, JSON.stringify({ ...all, [key]: { next: String(next), cid, host, at: Date.now() } }));
   } catch {}
 }
 
@@ -157,7 +157,8 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
   const hint = sentNonce(sentAt, at.nonce);
   let nonce = hint.nonce;
   if (nonce > at.nonce) {
-    if (await stillPooled(at.host, write.chainPath, hint.held)) {
+    // Asked of the host that took it: another may never have pooled it.
+    if (await stillPooled(hint.host ?? at.host, write.chainPath, hint.held)) {
       throw new Error("This account has a write still pending. Nothing was sent; try again once it confirms (about one block).");
     }
     nonce = at.nonce;
@@ -177,7 +178,7 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
     } catch (error) {
       throw new Error(`The host ${describe(error)}`);
     }
-    rememberSent(sentAt, nonce + 1n, signed.transactionCID);
+    rememberSent(sentAt, nonce + 1n, signed.transactionCID, at.host);
     return { transactionCID: signed.transactionCID, nonce, host: at.host };
   };
 
