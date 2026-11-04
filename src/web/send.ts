@@ -192,12 +192,10 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
         break;
       } catch (error) {
         if (!isRefusedForNow(error)) throw new Error(`The host ${describe(error)}`);
-        if (tried === resend.afterMs.length) throw new Error(`The host ${describe(error)} (sent ${tried + 1} times over ${resend.afterMs.reduce((a, b) => a + b, 0) / 1000} s)`);
+        if (tried === resend.afterMs.length) throw new Error(`The host ${describe(error)} (sent ${tried + 1} times)`);
       }
-      // Once sending starts the window offers no Stop; should one come, the
-      // write refused so far is not sent again.
+      // Once sending starts the window offers no Stop, so the wait is a plain one.
       await new Promise((resolve) => setTimeout(resolve, resend.afterMs[tried]));
-      if (signal?.aborted) throw new Stopped();
     }
     rememberSent(sentAt, nonce + 1n, signed.transactionCID, at.host);
     return { transactionCID: signed.transactionCID, nonce, host: at.host };

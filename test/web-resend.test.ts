@@ -60,7 +60,7 @@ test("a host catching up, or reading state it let go of, is sent the same write 
 
 test("a host still refusing for now after the last wait ends the write, as does any other answer at once", async () => {
   const busy = hosts(Array(9).fill({ status: 503, refusal: "contextChanged" }));
-  await assert.rejects(sending(), /^Error: The host .*the chain moved.*\(sent 5 times over 0\.004 s\)$/);
+  await assert.rejects(sending(), /^Error: The host .*the chain moved.*\(sent 5 times\)$/);
   assert.equal(busy.length, 1 + resend.afterMs.length);
 
   for (const answer of [{ status: 400, refusal: "invalidState" }, { status: 503, refusal: "full" }, { status: 503, refusal: "shuttingDown" }, { status: 502 }]) {
