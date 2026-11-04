@@ -8,12 +8,10 @@ import { send, resend, type Quote } from "../src/web/send.ts";
 import { recordsBody } from "../src/lib/wallet/session.ts";
 import { importPrivateKey } from "../src/lib/crypto/accounts.ts";
 
-const fast = { afterMs: [1, 1, 1, 1] };
-Object.assign(resend, fast);
+resend.afterMs = [1, 1, 1, 1];
 const realFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = realFetch;
-  Object.assign(resend, fast);
   try { localStorage.clear(); } catch {}
 });
 
@@ -48,7 +46,8 @@ function hosts(answers: Answer[]) {
 }
 
 const sending = () => send(write, me.address, me.privateKey, route, quoted, () => {});
-const same = (posts: { payload: string }[]) => posts.every((p) => p.payload === posts[0].payload);
+/** Every post carries the one signature the wallet makes for the write: signed once, never re-signed. */
+const same = (posts: { payload: string }[]) => posts.every((p) => p.payload === posts[0].payload && p.payload.includes(signed.signature));
 
 test("a host catching up, or reading state it let go of, is sent the same write again until it takes it", async () => {
   const posts = hosts([{ status: 503, refusal: "contextChanged" }, { status: 400, refusal: "unavailable" }]);
@@ -61,7 +60,7 @@ test("a host catching up, or reading state it let go of, is sent the same write 
 
 test("a host still refusing for now after the last wait ends the write, as does any other answer at once", async () => {
   const busy = hosts(Array(9).fill({ status: 503, refusal: "contextChanged" }));
-  await assert.rejects(sending(), /^Error: The host .*the chain moved/);
+  await assert.rejects(sending(), /^Error: The host .*the chain moved.*\(sent 5 times over 0\.004 s\)$/);
   assert.equal(busy.length, 1 + resend.afterMs.length);
 
   for (const answer of [{ status: 400, refusal: "invalidState" }, { status: 503, refusal: "full" }, { status: 503, refusal: "shuttingDown" }, { status: 502 }]) {
