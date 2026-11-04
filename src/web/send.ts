@@ -6,7 +6,7 @@
 
 import { signTransactionBody, signedTransactionCID, transactionPayload, type TransactionBody } from "@adalin/lattice-core";
 import { recordsBody } from "../lib/wallet/session.ts";
-import { describe, submitChecked, submitter } from "../lib/wallet/node.ts";
+import { describe, retriableRefusal, submitChecked, submitter } from "../lib/wallet/node.ts";
 import type { PageWriteRequest } from "../lib/wallet/provider.ts";
 import { NoPay, NoSponsor, Stopped, TooMuchWork, sponsorFee, type Step } from "./sponsor.ts";
 
@@ -15,15 +15,39 @@ export type Progress = Step | { stage: "coins" | "send" };
 
 const SENT = "selfhold.sent"; // { "<chain> <address>": the nonce after the last one sent from this browser }
 
+/**
+ * How long a refusal that says "not now" is waited out: the same signed
+ * write is sent again after each of these, to the host that quoted it, then
+ * once to each other host of the chain. A host refuses so while it catches
+ * up (`contextChanged`), while it reads state it let go of (`unavailable`),
+ * or while its pool is full; a few seconds usually clear it.
+ */
+export const resend = { afterMs: [1_000, 2_000, 4_000, 8_000] };
+
+const pause = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  if (signal?.aborted) return reject(new Stopped());
+  const timer = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
+  const stop = () => { clearTimeout(timer); reject(new Stopped()); };
+  signal?.addEventListener("abort", stop, { once: true });
+});
+
 /** Where a site's write goes: hosts for its chain, and a fee sponsor's URL or "" for none. */
 export interface Route { hosts: string[]; sponsor: string }
 
 /** A write the account can't pay for: it needs `needed` coins and holds `balance`. */
 export class NeedsCoins extends Error {
-  /** `sponsor`: why the sponsor didn't pay, if it was asked: "dear" (too much work here), "down", or "most" (not this much of a price). */
-  constructor(readonly address: string, readonly needed: bigint, readonly balance: bigint, readonly sponsor: "dear" | "down" | "most" | null = null) {
+  readonly address: string;
+  readonly needed: bigint;
+  readonly balance: bigint;
+  /** Why the sponsor didn't pay, if it was asked: "dear" (too much work here), "down", or "most" (not this much of a price). */
+  readonly sponsor: "dear" | "down" | "most" | null;
+  constructor(address: string, needed: bigint, balance: bigint, sponsor: "dear" | "down" | "most" | null = null) {
     super(`Your account needs ${needed} ${needed === 1n ? "coin" : "coins"} for this and holds ${balance}.`);
     this.name = "NeedsCoins";
+    this.address = address;
+    this.needed = needed;
+    this.balance = balance;
+    this.sponsor = sponsor;
   }
 }
 
@@ -143,7 +167,8 @@ async function oneAtATime<T>(run: () => Promise<T>, waiting: () => void, signal?
  * its nonce, and the host it went to: a site waits on that nonce passing there.
  * Coins pay the fee only where the review said they might: when the sponsor
  * can't help (never when it changed the write) and the account covered it.
- * Once sent, a write is never sent again; once stopped, nothing is sent.
+ * A write a host took is never sent again; one a host refused for now (see
+ * `resend`) is sent again as signed; once stopped, nothing is sent.
  */
 export interface Sent { transactionCID: string; nonce: bigint; host: string }
 
@@ -173,13 +198,27 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
     const all = { ...signatures, [publicKey]: signature };
     const signed = { payload: transactionPayload(all, body), bodyCID, transactionCID: signedTransactionCID(all, body) };
     progress({ stage: "send" });
-    try {
-      await submitChecked(submitter(at.host), signed);
-    } catch (error) {
-      throw new Error(`The host ${describe(error)}`);
+    // Signed once; a host that says "not now" is sent the same bytes again,
+    // then the chain's other hosts are. Any other answer is final.
+    const others = route.hosts.filter((h) => h !== at.host);
+    const tries = [...[0, ...resend.afterMs].map((wait) => ({ host: at.host, wait })), ...others.map((host) => ({ host, wait: 0 }))];
+    let last: unknown;
+    for (let i = 0; i < tries.length; i++) {
+      const { host, wait } = tries[i];
+      if (last !== undefined && retriableRefusal(last) === "elsewhere" && host === at.host) continue;
+      if (wait > 0) await pause(wait, signal);
+      if (signal?.aborted) throw new Stopped();
+      try {
+        await submitChecked(submitter(host), signed);
+      } catch (error) {
+        if (!retriableRefusal(error)) throw new Error(`The host ${describe(error)}`);
+        last = error;
+        continue;
+      }
+      rememberSent(sentAt, nonce + 1n, signed.transactionCID, host);
+      return { transactionCID: signed.transactionCID, nonce, host };
     }
-    rememberSent(sentAt, nonce + 1n, signed.transactionCID, at.host);
-    return { transactionCID: signed.transactionCID, nonce, host: at.host };
+    throw new Error(`The host ${describe(last)}`);
   };
 
   if (quoted.sponsored) {

@@ -427,7 +427,18 @@ export function shouldOfferFeeReplacement(error: unknown): boolean {
 export function isTransientSubmissionRefusal(error: unknown): boolean {
   return error instanceof SubmissionError && (error.status === 401 || error.status === 403 || error.status === 429
     || error.reason === "full" || error.reason === "shuttingDown" || error.reason === "nonceAhead"
-    || error.reason === "unavailable" || error.reason === "insufficientFunds");
+    || error.reason === "unavailable" || error.reason === "insufficientFunds" || error.reason === "contextChanged");
+}
+
+/** The node said it did not take the transaction for now, not that it is
+ * wrong: the same signed bytes may be sent again in seconds, to it or to
+ * another host of the chain. Sending them again cannot apply them twice:
+ * they are one transaction, one CID and one nonce wherever they land.
+ * `shuttingDown` is worth sending only to another host. */
+export function retriableRefusal(error: unknown): "again" | "elsewhere" | null {
+  if (!(error instanceof SubmissionError)) return null;
+  if (error.reason === "shuttingDown") return "elsewhere";
+  return error.reason === "contextChanged" || error.reason === "unavailable" || error.reason === "full" ? "again" : null;
 }
 
 /** A browser permission failure, not an endpoint outage. */
