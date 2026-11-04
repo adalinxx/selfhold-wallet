@@ -427,7 +427,7 @@ export function shouldOfferFeeReplacement(error: unknown): boolean {
 export function isTransientSubmissionRefusal(error: unknown): boolean {
   return error instanceof SubmissionError && (error.status === 401 || error.status === 403 || error.status === 429
     || error.reason === "full" || error.reason === "shuttingDown" || error.reason === "nonceAhead"
-    || error.reason === "unavailable" || error.reason === "insufficientFunds" || error.reason === "contextChanged");
+    || error.reason === "unavailable" || error.reason === "insufficientFunds");
 }
 
 /** The node did not take it for now, and may in seconds: it was catching up

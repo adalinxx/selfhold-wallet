@@ -10,7 +10,7 @@ import { NodeError } from "@adalin/lattice-client";
 import { normalizeNodeURL, parseChainPath, originPattern, isLoopbackNodeURL } from "../src/lib/config.ts";
 import { loadSettings, recordOpenDeposit, completeOpenDeposit, recordOpenPurchase, archiveOpenPurchase, recordSent, forgetSent, recordPendingSubmission, completePendingSubmission, archivePendingSubmission, recordWithdrawalAttempt, forgetWithdrawalAttempt, defaultFee, chosenFee, parseFee, DEFAULT_SETTINGS, type Settings } from "../src/lib/wallet/settings.ts";
 import type { SignedSubmit } from "../src/lib/wallet/types.ts";
-import { reader, submitter, submitChecked, CIDMismatchError, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, declaredHosts, chainNodes, spread, describe, feeWarning, highFeeWarning, nextReplacementFee, replacementFee, transferBody, weigh, feeChoice, automaticFee, transferSize, blockCadence, readFeeMarket, sentStatus, statusText, OPERATOR_DECLARED, verifySparseProof } from "../src/lib/wallet/node.ts";
+import { reader, submitter, submitChecked, CIDMismatchError, isDefiniteSubmissionRefusal, shouldOfferFeeReplacement, isTransientSubmissionRefusal, isTooLargeRefusal, isRefusedForNow, declaredHosts, chainNodes, spread, describe, feeWarning, highFeeWarning, nextReplacementFee, replacementFee, transferBody, weigh, feeChoice, automaticFee, transferSize, blockCadence, readFeeMarket, sentStatus, statusText, OPERATOR_DECLARED, verifySparseProof } from "../src/lib/wallet/node.ts";
 import type { VolumeEntry } from "@adalin/lattice-volumes";
 import { importPrivateKey } from "../src/lib/crypto/accounts.ts";
 import { signTransfer } from "../src/lib/wallet/session.ts";
@@ -360,6 +360,12 @@ test("submission posts the signer's payload to /transactions; refusals are typed
   assert.equal(shouldOfferFeeReplacement(new SubmissionError(401)), false);
   assert.equal(shouldOfferFeeReplacement(new SubmissionError(429, "rate limited")), false);
   assert.equal(shouldOfferFeeReplacement(new SubmissionError(503, "shuttingDown")), false);
+  // "Not now": the same bytes may go to the same node again in seconds.
+  assert.equal(isRefusedForNow(new SubmissionError(503, "contextChanged")), true);
+  assert.equal(isRefusedForNow(new SubmissionError(400, "unavailable")), true);
+  for (const final of [new SubmissionError(400, "invalidState"), new SubmissionError(503, "full"), new SubmissionError(503, "shuttingDown"), new SubmissionError(502), new TypeError("connection lost")]) {
+    assert.equal(isRefusedForNow(final), false);
+  }
   assert.equal(isTransientSubmissionRefusal(new SubmissionError(401)), true);
   assert.equal(isTransientSubmissionRefusal(new SubmissionError(429, "rate limited")), true);
   assert.equal(isTransientSubmissionRefusal(new SubmissionError(400, "full")), true);

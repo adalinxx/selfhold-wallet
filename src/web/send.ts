@@ -192,7 +192,7 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
       } catch (error) {
         if (!isRefusedForNow(error) || tried === resend.afterMs.length) throw new Error(`The host ${describe(error)}`);
       }
-      // Only "not now"s so far, so nothing was taken: Stop still sends nothing.
+      // Only "not now"s so far, so nothing was taken: aborted now, nothing is sent.
       await pause(resend.afterMs[tried], signal);
     }
     rememberSent(sentAt, nonce + 1n, signed.transactionCID, at.host);
