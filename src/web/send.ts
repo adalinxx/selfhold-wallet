@@ -6,7 +6,7 @@
 
 import { signTransactionBody, signedTransactionCID, transactionPayload, type TransactionBody } from "@adalin/lattice-core";
 import { recordsBody } from "../lib/wallet/session.ts";
-import { describe, submitChecked, submitter } from "../lib/wallet/node.ts";
+import { describe, isRefusedForNow, submitChecked, submitter } from "../lib/wallet/node.ts";
 import type { PageWriteRequest } from "../lib/wallet/provider.ts";
 import { NoPay, NoSponsor, Stopped, TooMuchWork, sponsorFee, type Step } from "./sponsor.ts";
 
@@ -15,15 +15,26 @@ export type Progress = Step | { stage: "coins" | "send" };
 
 const SENT = "selfhold.sent"; // { "<chain> <address>": the nonce after the last one sent from this browser }
 
+/** How a host's "not now" (`isRefusedForNow`) is waited out: the same signed write is sent again after each of these. */
+export const resend = { afterMs: [1_000, 2_000, 4_000, 8_000] };
+
 /** Where a site's write goes: hosts for its chain, and a fee sponsor's URL or "" for none. */
 export interface Route { hosts: string[]; sponsor: string }
 
 /** A write the account can't pay for: it needs `needed` coins and holds `balance`. */
 export class NeedsCoins extends Error {
-  /** `sponsor`: why the sponsor didn't pay, if it was asked: "dear" (too much work here), "down", or "most" (not this much of a price). */
-  constructor(readonly address: string, readonly needed: bigint, readonly balance: bigint, readonly sponsor: "dear" | "down" | "most" | null = null) {
+  readonly address: string;
+  readonly needed: bigint;
+  readonly balance: bigint;
+  /** Why the sponsor didn't pay, if it was asked: "dear" (too much work here), "down", or "most" (not this much of a price). */
+  readonly sponsor: "dear" | "down" | "most" | null;
+  constructor(address: string, needed: bigint, balance: bigint, sponsor: "dear" | "down" | "most" | null = null) {
     super(`Your account needs ${needed} ${needed === 1n ? "coin" : "coins"} for this and holds ${balance}.`);
     this.name = "NeedsCoins";
+    this.address = address;
+    this.needed = needed;
+    this.balance = balance;
+    this.sponsor = sponsor;
   }
 }
 
@@ -143,7 +154,8 @@ async function oneAtATime<T>(run: () => Promise<T>, waiting: () => void, signal?
  * its nonce, and the host it went to: a site waits on that nonce passing there.
  * Coins pay the fee only where the review said they might: when the sponsor
  * can't help (never when it changed the write) and the account covered it.
- * Once sent, a write is never sent again; once stopped, nothing is sent.
+ * A write the host took is never sent again; one it refused for now is
+ * sent again as signed (`resend`); once stopped, nothing is sent.
  */
 export interface Sent { transactionCID: string; nonce: bigint; host: string }
 
@@ -173,10 +185,17 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
     const all = { ...signatures, [publicKey]: signature };
     const signed = { payload: transactionPayload(all, body), bodyCID, transactionCID: signedTransactionCID(all, body) };
     progress({ stage: "send" });
-    try {
-      await submitChecked(submitter(at.host), signed);
-    } catch (error) {
-      throw new Error(`The host ${describe(error)}`);
+    const host = submitter(at.host);
+    for (let tried = 0; ; tried++) {
+      try {
+        await submitChecked(host, signed);
+        break;
+      } catch (error) {
+        if (!isRefusedForNow(error)) throw new Error(`The host ${describe(error)}`);
+        if (tried === resend.afterMs.length) throw new Error(`The host ${describe(error)} (sent ${tried + 1} times)`);
+      }
+      // Once sending starts the window offers no Stop, so the wait is a plain one.
+      await new Promise((resolve) => setTimeout(resolve, resend.afterMs[tried]));
     }
     rememberSent(sentAt, nonce + 1n, signed.transactionCID, at.host);
     return { transactionCID: signed.transactionCID, nonce, host: at.host };

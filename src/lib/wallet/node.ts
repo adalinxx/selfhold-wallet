@@ -430,6 +430,14 @@ export function isTransientSubmissionRefusal(error: unknown): boolean {
     || error.reason === "unavailable" || error.reason === "insufficientFunds");
 }
 
+/** The node did not take it for now, and may in seconds: it was catching up
+ * (`contextChanged`), or could not yet read the state it needed
+ * (`unavailable`). The same signed bytes can be sent again: they are one
+ * transaction, one CID and one nonce, so they never apply twice. */
+export function isRefusedForNow(error: unknown): boolean {
+  return error instanceof SubmissionError && (error.reason === "contextChanged" || error.reason === "unavailable");
+}
+
 /** A browser permission failure, not an endpoint outage. */
 export class NodePermissionError extends Error {
   constructor(message: string) { super(message); this.name = "NodePermissionError"; }
