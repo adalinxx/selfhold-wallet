@@ -35,6 +35,21 @@ test("a page may connect, read its address, disconnect, and ask to write records
   assert.deepEqual(extra.params, { chainPath: ["Nexus", "stoa", "bitcoin"], actions: [{ key: "k", newValue: "v" }], fee: "1" }, "unknown fields (a page's nonce too) are dropped");
 });
 
+test("a page write may name prepaid key prefixes for its sponsor, and ask to pay from coins only; malformed, it is refused", () => {
+  const asked = parseProviderCall(write({ fund: ["tip/", "comment/"], coinOnly: true }));
+  assert.ok(!("error" in asked) && asked.method === "writeRecords");
+  assert.deepEqual(asked.params.fund, ["tip/", "comment/"]);
+  assert.equal(asked.params.coinOnly, true);
+  const plain = parseProviderCall(write({ coinOnly: false }));
+  assert.ok(!("error" in plain) && plain.method === "writeRecords");
+  assert.ok(!("coinOnly" in plain.params) && !("fund" in plain.params), "absent, or false, they say nothing");
+  assert.ok("error" in parseProviderCall(write({ fund: ["x".repeat(128)] })) === false, "128 bytes is allowed");
+  for (const fund of [[], "tip/", [""], ["a\nb"], [7], ["x".repeat(129)], ["é".repeat(65)], Array.from({ length: 9 }, (_, i) => `p${i}/`), null]) {
+    assert.ok("error" in parseProviderCall(write({ fund })), JSON.stringify(fund));
+  }
+  for (const coinOnly of ["true", 1, null]) assert.ok("error" in parseProviderCall(write({ coinOnly })), JSON.stringify(coinOnly));
+});
+
 test("a page write may ask no fee: the wallet chooses it, and nothing signs without one", () => {
   const asked = parseProviderCall(write({ fee: undefined }));
   assert.ok(!("error" in asked) && asked.method === "writeRecords");

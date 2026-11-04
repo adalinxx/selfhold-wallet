@@ -26,8 +26,12 @@ export interface WriteRequest {
 /**
  * A write as a page asks for it. Without `fee` the wallet uses the person's
  * own default for the chain, shows it in the review, and signs it as shown.
+ * Neither `fund` nor `coinOnly` is signed: `fund` goes to the fee sponsor
+ * (key prefixes whose service price the site prepaid there; the fee and work
+ * are the same), and `coinOnly` asks that the payments come from the
+ * account's coins, never bought from the sponsor with work.
  */
-export type PageWriteRequest = Omit<WriteRequest, "fee"> & { fee?: string };
+export type PageWriteRequest = Omit<WriteRequest, "fee"> & { fee?: string; fund?: string[]; coinOnly?: true };
 
 export type ProviderCall =
   | { method: "connect" }
@@ -41,6 +45,8 @@ export type ProviderCall =
 const INT64_MAX = (1n << 63n) - 1n;
 export const MAX_PAYMENTS = 16;
 export const MAX_MESSAGE_BYTES = 4096;
+export const MAX_FUND = 8;
+export const MAX_FUND_BYTES = 128;
 
 const decimal = (value: unknown, max: bigint): value is string =>
   typeof value === "string" && /^(0|[1-9][0-9]{0,19})$/.test(value) && BigInt(value) <= max;
@@ -65,7 +71,7 @@ export function parseProviderCall(raw: unknown): ProviderCall | { error: string 
   }
   if (method !== "writeRecords") return { error: `Unknown method: ${String(method)}` };
   if (typeof params !== "object" || params === null) return { error: "writeRecords needs params" };
-  const { chainPath, actions, payments, fee } = params as Record<string, unknown>;
+  const { chainPath, actions, payments, fee, fund, coinOnly } = params as Record<string, unknown>;
   // Each part on its own: joined, a part holding "/" would pass as two.
   const path = Array.isArray(chainPath) && chainPath.every((part) => typeof part === "string" && !part.includes("/"))
     ? parseChainPath(chainPath.join("/")) : null;
@@ -83,7 +89,15 @@ export function parseProviderCall(raw: unknown): ProviderCall | { error: string 
   if (fee !== undefined && !isFee(fee)) return { error: "fee must be a decimal integer" };
   const paid = parsePayments(payments, fee === undefined ? 0n : BigInt(fee));
   if ("error" in paid) return paid;
-  return { method, params: { chainPath: path, actions: clean, ...(paid.length ? { payments: paid } : {}), ...(fee === undefined ? {} : { fee }) } };
+  if (fund !== undefined && !(Array.isArray(fund) && fund.length >= 1 && fund.length <= MAX_FUND
+    && fund.every((prefix) => typeof prefix === "string" && prefix && !prefix.includes("\n") && utf8ToBytes(prefix).length <= MAX_FUND_BYTES))) {
+    return { error: `fund must be a list of 1 to ${MAX_FUND} key prefixes, each at most ${MAX_FUND_BYTES} bytes, with no line break` };
+  }
+  if (coinOnly !== undefined && typeof coinOnly !== "boolean") return { error: "coinOnly must be true or false" };
+  return { method, params: {
+    chainPath: path, actions: clean, ...(paid.length ? { payments: paid } : {}), ...(fee === undefined ? {} : { fee }),
+    ...(fund === undefined ? {} : { fund: [...fund as string[]] }), ...(coinOnly ? { coinOnly: true as const } : {}),
+  } };
 }
 
 /** Each payee a canonical address, once; each amount above zero; all of it and the fee within one debit. */

@@ -223,7 +223,8 @@ async function review(origin: string, address: string, write: PageWriteRequest, 
     : el("div", { className: "meta" }, named(a.oldValue, names, 40), " → ", named(a.newValue, names, 40));
 
   const status = el("p", { className: "meta", role: "status" });
-  const short = !quoted.sponsored && !quoted.covered;
+  // Too few coins: with no sponsor, for the payments and fee; for a coin-only write, for its payments.
+  const short = (!quoted.sponsored && !quoted.covered) || (write.coinOnly === true && quoted.balance < quoted.paying);
   let busy = false;
   const approve = armed(button("Approve with your passkey", async () => {
     busy = true;
@@ -262,7 +263,7 @@ async function review(origin: string, address: string, write: PageWriteRequest, 
     el("h1", { textContent: payments.length ? "Review payment" : "Review write" }),
     el("p", { className: "from" }, "from ", site(origin)),
     summary,
-    ...(short ? [notice("warning", `Your account holds ${fmt(quoted.balance)}: this needs ${fmt(fromCoins)}.`)] : []),
+    ...(short ? [notice("warning", `Your account holds ${fmt(quoted.balance)}: this needs ${fmt(fromCoins)}${write.coinOnly ? ", from your coins only" : ""}.`)] : []),
     label(`Records · ${write.actions.length}`),
     el("ul", { className: "records" }, ...write.actions.map((a) => el("li", {}, el("div", { className: "key" }, named(a.key, names, 80)), change(a)))),
     el("details", { className: "advanced" },
@@ -273,6 +274,7 @@ async function review(origin: string, address: string, write: PageWriteRequest, 
           row("Chain", chain),
           row("Host", quoted.host),
           ...(route.sponsor ? [row("Fee sponsor", route.sponsor)] : []),
+          ...(write.fund ? [row("Prepaid by the site", visible(write.fund.join(", ")))] : []),
           ...payments.map((p) => row(names.get(p.to)!, fullAddress(p.to)))),
         label("Records as sent"),
         el("ul", { className: "records raw" }, ...write.actions.map((a) => el("li", {},
@@ -281,7 +283,7 @@ async function review(origin: string, address: string, write: PageWriteRequest, 
             : a.oldValue === undefined ? [valueNode("new", a.newValue)]
             : [valueNode("was", a.oldValue), valueNode("now", a.newValue)])))))),
     status,
-    // Too few coins and no sponsor: nothing to approve, and the site hears why, so it can offer coins.
+    // Too few coins, and no sponsor or a coin-only write: nothing to approve, and the site hears why, so it can offer coins.
     short
       ? button("Close", () => answer({ ok: false, error: `Your account needs ${fromCoins} coins for this and holds ${quoted.balance}.`, code: "NeedsCoins", address, needed: String(fromCoins), balance: String(quoted.balance), sponsor: null }), true)
       : el("div", { className: "actions-row" }, button("Decline", () => !busy && decline()), approve),
