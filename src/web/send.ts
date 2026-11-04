@@ -87,21 +87,38 @@ export async function quote(write: PageWriteRequest, owner: string, route: Route
 const SENT_FOR_MS = 10 * 60_000;
 const SENT_AHEAD = 8n;
 const sentKey = (chainPath: readonly string[], owner: string) => `${chainPath.join("/")} ${owner}`;
-function sentNonce(key: string, chainNonce: bigint): bigint {
+function sentNonce(key: string, chainNonce: bigint): { nonce: bigint; held?: string; host?: string } {
   try {
     const sent = JSON.parse(localStorage.getItem(SENT) ?? "{}")[key];
-    if (!sent || Date.now() - sent.at > SENT_FOR_MS) return chainNonce;
+    if (!sent || Date.now() - sent.at > SENT_FOR_MS) return { nonce: chainNonce };
     const next = BigInt(sent.next);
-    return next > chainNonce && next - chainNonce <= SENT_AHEAD ? next : chainNonce;
+    return next > chainNonce && next - chainNonce <= SENT_AHEAD ? { nonce: next, held: sent.cid, host: sent.host } : { nonce: chainNonce };
   } catch {
-    return chainNonce;
+    return { nonce: chainNonce };
   }
 }
-function rememberSent(key: string, next: bigint) {
+function rememberSent(key: string, next: bigint, cid: string, host: string) {
   try {
     const all = JSON.parse(localStorage.getItem(SENT) ?? "{}");
-    localStorage.setItem(SENT, JSON.stringify({ ...all, [key]: { next: String(next), at: Date.now() } }));
+    localStorage.setItem(SENT, JSON.stringify({ ...all, [key]: { next: String(next), cid, host, at: Date.now() } }));
   } catch {}
+}
+
+/**
+ * Hosts pool only what executes on their tip, one write per account: a write
+ * signed past a pending one is refused (`nonceAhead`). So the remembered
+ * write holds the next nonce only while `host` still pools it; one it let go
+ * of (evicted, lost to a reorg) frees it. True when it is still pooled.
+ */
+async function stillPooled(host: string, chainPath: readonly string[], cid: string | undefined): Promise<boolean> {
+  if (cid === undefined) return false;
+  try {
+    const response = await fetch(`${host}/api/mempool?chainPath=${encodeURIComponent(chainPath.join("/"))}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) return true;
+    return ((await response.json()).transactions ?? []).includes(cid);
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -137,7 +154,15 @@ export function send(write: PageWriteRequest, owner: string, key: Uint8Array, ro
 async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, route: Route, quoted: Quote, progress: (step: Progress) => void, signal?: AbortSignal): Promise<Sent> {
   const at = await reach([quoted.host, ...route.hosts.filter((h) => h !== quoted.host)], write.chainPath, owner);
   const sentAt = sentKey(write.chainPath, owner);
-  const nonce = sentNonce(sentAt, at.nonce);
+  const hint = sentNonce(sentAt, at.nonce);
+  let nonce = hint.nonce;
+  if (nonce > at.nonce) {
+    // Asked of the host that took it: another may never have pooled it.
+    if (await stillPooled(hint.host ?? at.host, write.chainPath, hint.held)) {
+      throw new Error("This account has a write still pending. Nothing was sent; try again once it confirms (about one block).");
+    }
+    nonce = at.nonce;
+  }
   const build = (fee: bigint) => recordsBody(owner, { actions: write.actions, payments: payments(write), fee, nonce, chainPath: write.chainPath });
   const covered = quoted.covered && at.balance >= quoted.paying + quoted.fee;
   const feeRose = () => new Error(`The fee rose to ${at.fee} since this was shown. Nothing was sent; try again.`);
@@ -153,7 +178,7 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
     } catch (error) {
       throw new Error(`The host ${describe(error)}`);
     }
-    rememberSent(sentAt, nonce + 1n);
+    rememberSent(sentAt, nonce + 1n, signed.transactionCID, at.host);
     return { transactionCID: signed.transactionCID, nonce, host: at.host };
   };
 
