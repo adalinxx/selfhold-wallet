@@ -430,15 +430,26 @@ export function isTransientSubmissionRefusal(error: unknown): boolean {
     || error.reason === "unavailable" || error.reason === "insufficientFunds" || error.reason === "contextChanged");
 }
 
-/** The node said it did not take the transaction for now, not that it is
- * wrong: the same signed bytes may be sent again in seconds, to it or to
- * another host of the chain. Sending them again cannot apply them twice:
- * they are one transaction, one CID and one nonce wherever they land.
- * `shuttingDown` is worth sending only to another host. */
-export function retriableRefusal(error: unknown): "again" | "elsewhere" | null {
-  if (!(error instanceof SubmissionError)) return null;
-  if (error.reason === "shuttingDown") return "elsewhere";
-  return error.reason === "contextChanged" || error.reason === "unavailable" || error.reason === "full" ? "again" : null;
+/**
+ * What a failed submission says about sending the same signed bytes again.
+ * They are one transaction, one CID and one nonce wherever they land, so
+ * sending them again can never apply them twice.
+ *
+ * - `again`: the node did not take it for now (catching up, reading state it
+ *   let go of); the same node may take it in seconds.
+ * - `elsewhere`: the node did not take it and won't soon (a full pool at
+ *   this fee, shutting down, or a refusal before the node: auth, rate
+ *   limit); another host may.
+ * - `final`: the node judged the transaction; another host would too.
+ * - `unknown`: no answer (unreachable, timed out, a proxy's 5xx): the node
+ *   may have taken it.
+ */
+export function refusalKind(error: unknown): "again" | "elsewhere" | "final" | "unknown" {
+  if (!(error instanceof SubmissionError)) return "unknown";
+  if (error.reason === "contextChanged" || error.reason === "unavailable") return "again";
+  if (error.reason === "full" || error.reason === "shuttingDown") return "elsewhere";
+  if (error.reason !== undefined) return "final";
+  return error.status >= 400 && error.status < 500 ? "elsewhere" : "unknown";
 }
 
 /** A browser permission failure, not an endpoint outage. */

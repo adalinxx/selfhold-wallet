@@ -45,6 +45,16 @@ type Progress = (step: Step) => void;
 export class Stopped extends Error {
   constructor() { super("Stopped. Nothing was sent."); this.name = "Stopped"; }
 }
+
+/** Waits `ms`, or throws Stopped at once when `signal` aborts. */
+export function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Stopped());
+    const stop = () => { clearTimeout(timer); reject(new Stopped()); };
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
+    signal?.addEventListener("abort", stop, { once: true });
+  });
+}
 type Wire = Record<string, unknown>;
 interface Work {
   client: string; assignment: string; fee: string; pay?: string; sharesForFee: string; shareTarget: string;
@@ -154,8 +164,7 @@ export async function sponsorFee(url: string, draft: TransactionBody, progress: 
       // Busy, or this block's fees all sold: a block or two from now, it has work again.
       if (status === 503 && Date.now() < patience) {
         progress({ stage: "busy" });
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        if (signal?.aborted) throw new Stopped();
+        await pause(3000, signal);
         continue;
       }
       // A token from before the sponsor restarted: start over with a new one.

@@ -6,30 +6,27 @@
 
 import { signTransactionBody, signedTransactionCID, transactionPayload, type TransactionBody } from "@adalin/lattice-core";
 import { recordsBody } from "../lib/wallet/session.ts";
-import { describe, retriableRefusal, submitChecked, submitter } from "../lib/wallet/node.ts";
+import { CIDMismatchError, describe, refusalKind, submitChecked, submitter } from "../lib/wallet/node.ts";
 import type { PageWriteRequest } from "../lib/wallet/provider.ts";
-import { NoPay, NoSponsor, Stopped, TooMuchWork, sponsorFee, type Step } from "./sponsor.ts";
+import { NoPay, NoSponsor, Stopped, TooMuchWork, pause, sponsorFee, type Step } from "./sponsor.ts";
 
-/** Where sending is: paying the fee in work (sponsor.ts), paying from coins, or sending. */
-export type Progress = Step | { stage: "coins" | "send" };
+/**
+ * Where sending is: paying the fee in work (sponsor.ts), paying from coins,
+ * sending, or sending again after a host said "not now". `maybe`: a host
+ * gave no answer, so it may have taken the write and Stop can't undo it.
+ */
+export type Progress = Step | { stage: "coins" | "send" } | { stage: "resend"; maybe: boolean };
 
 const SENT = "selfhold.sent"; // { "<chain> <address>": the nonce after the last one sent from this browser }
 
 /**
- * How long a refusal that says "not now" is waited out: the same signed
- * write is sent again after each of these, to the host that quoted it, then
- * once to each other host of the chain. A host refuses so while it catches
- * up (`contextChanged`), while it reads state it let go of (`unavailable`),
- * or while its pool is full; a few seconds usually clear it.
+ * How a host's "not now" is waited out (`refusalKind` `again`: catching up,
+ * or reading state it let go of; a few seconds usually clear it): the same
+ * signed write goes to the host that quoted it again after each of
+ * `afterMs`, then once to each other host of the chain. `timeoutMs` bounds
+ * each send.
  */
-export const resend = { afterMs: [1_000, 2_000, 4_000, 8_000] };
-
-const pause = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
-  if (signal?.aborted) return reject(new Stopped());
-  const timer = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
-  const stop = () => { clearTimeout(timer); reject(new Stopped()); };
-  signal?.addEventListener("abort", stop, { once: true });
-});
+export const resend = { afterMs: [1_000, 2_000, 4_000, 8_000], timeoutMs: 20_000 };
 
 /** Where a site's write goes: hosts for its chain, and a fee sponsor's URL or "" for none. */
 export interface Route { hosts: string[]; sponsor: string }
@@ -198,27 +195,48 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
     const all = { ...signatures, [publicKey]: signature };
     const signed = { payload: transactionPayload(all, body), bodyCID, transactionCID: signedTransactionCID(all, body) };
     progress({ stage: "send" });
-    // Signed once; a host that says "not now" is sent the same bytes again,
-    // then the chain's other hosts are. Any other answer is final.
-    const others = route.hosts.filter((h) => h !== at.host);
-    const tries = [...[0, ...resend.afterMs].map((wait) => ({ host: at.host, wait })), ...others.map((host) => ({ host, wait: 0 }))];
-    let last: unknown;
-    for (let i = 0; i < tries.length; i++) {
-      const { host, wait } = tries[i];
-      if (last !== undefined && retriableRefusal(last) === "elsewhere" && host === at.host) continue;
-      if (wait > 0) await pause(wait, signal);
-      if (signal?.aborted) throw new Stopped();
-      try {
-        await submitChecked(submitter(host), signed);
-      } catch (error) {
-        if (!retriableRefusal(error)) throw new Error(`The host ${describe(error)}`);
-        last = error;
-        continue;
+    const timed: typeof fetch = (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(resend.timeoutMs) });
+    // What a host answered, by how much it says: the quoting host's answer
+    // over another's (whose tip may be behind), a judgment over no answer.
+    let answer: { host: string; error: unknown } | undefined;
+    // A host that gave no answer may have taken it: from then on Stop can't
+    // promise nothing was sent, and the write is remembered as sent there.
+    let maybe: string | undefined;
+    const sendTo = async (host: string, waits: readonly number[]) => {
+      for (const wait of waits) {
+        if (wait > 0) {
+          progress({ stage: "resend", maybe: maybe !== undefined });
+          await pause(wait, maybe === undefined ? signal : undefined);
+        } else if (signal?.aborted && maybe === undefined) throw new Stopped();
+        try {
+          await submitChecked(submitter(host, timed), signed);
+          return true;
+        } catch (error) {
+          if (error instanceof CIDMismatchError) throw new Error(`The host at ${host}: ${error.message}`);
+          const kind = refusalKind(error);
+          if (kind === "unknown") maybe ??= host;
+          if (!answer || host === at.host || (refusalKind(answer.error) === "unknown" && kind !== "unknown")) answer = { host, error };
+          // The quoting host's judgment ends the write; another's may come from a tip behind.
+          if (kind === "final" && host === at.host) throw new Error(`The host at ${host} ${describe(error)}`);
+          if (kind !== "again") return false;
+        }
       }
-      rememberSent(sentAt, nonce + 1n, signed.transactionCID, host);
-      return { transactionCID: signed.transactionCID, nonce, host };
+      return false;
+    };
+    let took: string | undefined;
+    for (const [host, waits] of [[at.host, [0, ...resend.afterMs]], ...route.hosts.filter((h) => h !== at.host).map((h) => [h, [0]])] as [string, number[]][]) {
+      if (await sendTo(host, waits)) { took = host; break; }
     }
-    throw new Error(`The host ${describe(last)}`);
+    if (took === undefined) {
+      if (maybe !== undefined) {
+        // Held as sent, so the next write waits for it rather than reusing its nonce.
+        rememberSent(sentAt, nonce + 1n, signed.transactionCID, maybe);
+        throw new Error(`The host at ${maybe} didn't answer, so it may have taken this write (${signed.transactionCID}). Check before sending it again.`);
+      }
+      throw new Error(`No host took it: the host at ${answer!.host} ${describe(answer!.error)}`);
+    }
+    rememberSent(sentAt, nonce + 1n, signed.transactionCID, took);
+    return { transactionCID: signed.transactionCID, nonce, host: took };
   };
 
   if (quoted.sponsored) {
