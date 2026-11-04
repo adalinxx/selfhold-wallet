@@ -6,27 +6,17 @@
 
 import { signTransactionBody, signedTransactionCID, transactionPayload, type TransactionBody } from "@adalin/lattice-core";
 import { recordsBody } from "../lib/wallet/session.ts";
-import { CIDMismatchError, describe, refusalKind, submitChecked, submitter } from "../lib/wallet/node.ts";
+import { describe, isRefusedForNow, submitChecked, submitter } from "../lib/wallet/node.ts";
 import type { PageWriteRequest } from "../lib/wallet/provider.ts";
 import { NoPay, NoSponsor, Stopped, TooMuchWork, pause, sponsorFee, type Step } from "./sponsor.ts";
 
-/**
- * Where sending is: paying the fee in work (sponsor.ts), paying from coins,
- * sending, or sending again after a host said "not now". `maybe`: a host
- * gave no answer, so it may have taken the write and Stop can't undo it.
- */
-export type Progress = Step | { stage: "coins" | "send" } | { stage: "resend"; maybe: boolean };
+/** Where sending is: paying the fee in work (sponsor.ts), paying from coins, or sending. */
+export type Progress = Step | { stage: "coins" | "send" };
 
 const SENT = "selfhold.sent"; // { "<chain> <address>": the nonce after the last one sent from this browser }
 
-/**
- * How a host's "not now" is waited out (`refusalKind` `again`: catching up,
- * or reading state it let go of; a few seconds usually clear it): the same
- * signed write goes to the host that quoted it again after each of
- * `afterMs`, then once to each other host of the chain. `timeoutMs` bounds
- * each send.
- */
-export const resend = { afterMs: [1_000, 2_000, 4_000, 8_000], timeoutMs: 20_000 };
+/** How a host's "not now" (`isRefusedForNow`) is waited out: the same signed write is sent again after each of these. */
+export const resend = { afterMs: [1_000, 2_000, 4_000, 8_000] };
 
 /** Where a site's write goes: hosts for its chain, and a fee sponsor's URL or "" for none. */
 export interface Route { hosts: string[]; sponsor: string }
@@ -164,8 +154,8 @@ async function oneAtATime<T>(run: () => Promise<T>, waiting: () => void, signal?
  * its nonce, and the host it went to: a site waits on that nonce passing there.
  * Coins pay the fee only where the review said they might: when the sponsor
  * can't help (never when it changed the write) and the account covered it.
- * A write a host took is never sent again; one a host refused for now (see
- * `resend`) is sent again as signed; once stopped, nothing is sent.
+ * A write the host took is never sent again; one it refused for now is
+ * sent again as signed (`resend`); once stopped, nothing is sent.
  */
 export interface Sent { transactionCID: string; nonce: bigint; host: string }
 
@@ -195,48 +185,18 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
     const all = { ...signatures, [publicKey]: signature };
     const signed = { payload: transactionPayload(all, body), bodyCID, transactionCID: signedTransactionCID(all, body) };
     progress({ stage: "send" });
-    const timed: typeof fetch = (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(resend.timeoutMs) });
-    // What a host answered, by how much it says: the quoting host's answer
-    // over another's (whose tip may be behind), a judgment over no answer.
-    let answer: { host: string; error: unknown } | undefined;
-    // A host that gave no answer may have taken it: from then on Stop can't
-    // promise nothing was sent, and the write is remembered as sent there.
-    let maybe: string | undefined;
-    const sendTo = async (host: string, waits: readonly number[]) => {
-      for (const wait of waits) {
-        if (wait > 0) {
-          progress({ stage: "resend", maybe: maybe !== undefined });
-          await pause(wait, maybe === undefined ? signal : undefined);
-        } else if (signal?.aborted && maybe === undefined) throw new Stopped();
-        try {
-          await submitChecked(submitter(host, timed), signed);
-          return true;
-        } catch (error) {
-          if (error instanceof CIDMismatchError) throw new Error(`The host at ${host}: ${error.message}`);
-          const kind = refusalKind(error);
-          if (kind === "unknown") maybe ??= host;
-          if (!answer || host === at.host || (refusalKind(answer.error) === "unknown" && kind !== "unknown")) answer = { host, error };
-          // The quoting host's judgment ends the write; another's may come from a tip behind.
-          if (kind === "final" && host === at.host) throw new Error(`The host at ${host} ${describe(error)}`);
-          if (kind !== "again") return false;
-        }
+    for (let tried = 0; ; tried++) {
+      try {
+        await submitChecked(submitter(at.host), signed);
+        break;
+      } catch (error) {
+        if (!isRefusedForNow(error) || tried === resend.afterMs.length) throw new Error(`The host ${describe(error)}`);
       }
-      return false;
-    };
-    let took: string | undefined;
-    for (const [host, waits] of [[at.host, [0, ...resend.afterMs]], ...route.hosts.filter((h) => h !== at.host).map((h) => [h, [0]])] as [string, number[]][]) {
-      if (await sendTo(host, waits)) { took = host; break; }
+      // Only "not now"s so far, so nothing was taken: Stop still sends nothing.
+      await pause(resend.afterMs[tried], signal);
     }
-    if (took === undefined) {
-      if (maybe !== undefined) {
-        // Held as sent, so the next write waits for it rather than reusing its nonce.
-        rememberSent(sentAt, nonce + 1n, signed.transactionCID, maybe);
-        throw new Error(`The host at ${maybe} didn't answer, so it may have taken this write (${signed.transactionCID}). Check before sending it again.`);
-      }
-      throw new Error(`No host took it: the host at ${answer!.host} ${describe(answer!.error)}`);
-    }
-    rememberSent(sentAt, nonce + 1n, signed.transactionCID, took);
-    return { transactionCID: signed.transactionCID, nonce, host: took };
+    rememberSent(sentAt, nonce + 1n, signed.transactionCID, at.host);
+    return { transactionCID: signed.transactionCID, nonce, host: at.host };
   };
 
   if (quoted.sponsored) {

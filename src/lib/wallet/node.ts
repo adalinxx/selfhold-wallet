@@ -430,26 +430,12 @@ export function isTransientSubmissionRefusal(error: unknown): boolean {
     || error.reason === "unavailable" || error.reason === "insufficientFunds" || error.reason === "contextChanged");
 }
 
-/**
- * What a failed submission says about sending the same signed bytes again.
- * They are one transaction, one CID and one nonce wherever they land, so
- * sending them again can never apply them twice.
- *
- * - `again`: the node did not take it for now (catching up, reading state it
- *   let go of); the same node may take it in seconds.
- * - `elsewhere`: the node did not take it and won't soon (a full pool at
- *   this fee, shutting down, or a refusal before the node: auth, rate
- *   limit); another host may.
- * - `final`: the node judged the transaction; another host would too.
- * - `unknown`: no answer (unreachable, timed out, a proxy's 5xx): the node
- *   may have taken it.
- */
-export function refusalKind(error: unknown): "again" | "elsewhere" | "final" | "unknown" {
-  if (!(error instanceof SubmissionError)) return "unknown";
-  if (error.reason === "contextChanged" || error.reason === "unavailable") return "again";
-  if (error.reason === "full" || error.reason === "shuttingDown") return "elsewhere";
-  if (error.reason !== undefined) return "final";
-  return error.status >= 400 && error.status < 500 ? "elsewhere" : "unknown";
+/** The node did not take it for now, and may in seconds: it was catching up
+ * (`contextChanged`), or could not yet read the state it needed
+ * (`unavailable`). The same signed bytes can be sent again: they are one
+ * transaction, one CID and one nonce, so they never apply twice. */
+export function isRefusedForNow(error: unknown): boolean {
+  return error instanceof SubmissionError && (error.reason === "contextChanged" || error.reason === "unavailable");
 }
 
 /** A browser permission failure, not an endpoint outage. */

@@ -304,7 +304,6 @@ function words(step: Progress): string {
     case "sign": return "The fee sponsor is adding the fee…";
     case "coins": return "Paying the fee from your coins…";
     case "send": return "Sending…";
-    case "resend": return "The host isn't taking writes this moment; sending again…";
   }
 }
 
@@ -317,7 +316,7 @@ function working(quoted: Quote, route: Route, device: string | null, stop: () =>
   if (!quoted.sponsored) {
     const note = say("Your passkey signed it. This takes a moment.");
     show(el("h1", { textContent: "Sending" }), note);
-    return { update: (step: Progress) => { note.textContent = step.stage === "queued" ? "Waiting for another Selfhold window to finish sending…" : step.stage === "resend" ? "The host isn't taking writes this moment; sending again…" : "Your passkey signed it. This takes a moment."; } };
+    return { update: (step: Progress) => { note.textContent = step.stage === "queued" ? "Waiting for another Selfhold window to finish sending…" : "Your passkey signed it. This takes a moment."; } };
   }
   const bar = el("div", { className: "work-bar", role: "progressbar", ariaValueMin: "0", ariaValueMax: "100", ariaValueNow: "0", ariaLabel: "Work done" }, el("span"));
   const fill = bar.firstChild as HTMLElement;
@@ -362,11 +361,6 @@ function working(quoted: Quote, route: Route, device: string | null, stop: () =>
         left.textContent = step.stage === "sign" ? "Work done." : "Sending…";
         // Past here the write is being sent: stopping can't take it back.
         stopButton.disabled = true;
-      }
-      if (step.stage === "resend") {
-        left.textContent = "The host isn't taking writes this moment; sending again…";
-        // Nothing was taken yet, unless a host gave no answer: only then can't Stop take it back.
-        stopButton.disabled = step.maybe;
       }
       if (step.stage === "coins") {
         left.textContent = "The fee sponsor can't help now: paying the fee from your coins…";

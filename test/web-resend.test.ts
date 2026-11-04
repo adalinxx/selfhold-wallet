@@ -1,15 +1,15 @@
-// Selfhold on the web: a write a host refuses "for now" is sent again, as
-// signed, until a host takes it; a host's judgment ends it at once.
+// Selfhold on the web: a write the host refuses "for now" is sent again, as
+// signed, until it takes it; any other answer ends the write at once.
 
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { signTransactionBody, signedTransactionCID } from "@adalin/lattice-core";
-import { send, resend, type Progress, type Quote } from "../src/web/send.ts";
+import { send, resend, type Quote } from "../src/web/send.ts";
 import { Stopped } from "../src/web/sponsor.ts";
 import { recordsBody } from "../src/lib/wallet/session.ts";
 import { importPrivateKey } from "../src/lib/crypto/accounts.ts";
 
-const fast = { afterMs: [1, 1, 1, 1], timeoutMs: 200 };
+const fast = { afterMs: [1, 1, 1, 1] };
 Object.assign(resend, fast);
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -28,7 +28,7 @@ const body = recordsBody(me.address, { actions: write.actions, payments: [], fee
 const signed = signTransactionBody(body, me.privateKey);
 const cid = signedTransactionCID({ [signed.publicKey]: signed.signature }, body);
 
-type Answer = { status: number; refusal?: string } | "hang";
+type Answer = { status: number; refusal?: string };
 /** Hosts that answer reads, and each `/transactions` post from `answers` in turn (then 200), recording each post. */
 function hosts(answers: Answer[]) {
   const posts: { host: string; payload: string }[] = [];
@@ -41,9 +41,6 @@ function hosts(answers: Answer[]) {
     if (url.pathname === "/transactions") {
       posts.push({ host: url.origin, payload: String(init?.body) });
       const answer = answers.shift() ?? { status: 200 };
-      if (answer === "hang") {
-        return new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
-      }
       return answer.status === 200 ? json(200, { transactionCID: cid }) : json(answer.status, { error: { message: answer.refusal } });
     }
     return json(404, {});
@@ -51,58 +48,28 @@ function hosts(answers: Answer[]) {
   return posts;
 }
 
-const sending = (signal?: AbortSignal, steps: Progress[] = []) =>
-  send(write, me.address, me.privateKey, route, quoted, (step) => steps.push(step), signal);
+const sending = (signal?: AbortSignal) => send(write, me.address, me.privateKey, route, quoted, () => {}, signal);
 const same = (posts: { payload: string }[]) => posts.every((p) => p.payload === posts[0].payload);
 
 test("a host catching up, or reading state it let go of, is sent the same write again until it takes it", async () => {
   const posts = hosts([{ status: 503, refusal: "contextChanged" }, { status: 400, refusal: "unavailable" }]);
-  const steps: Progress[] = [];
-  const sent = await sending(undefined, steps);
+  const sent = await sending();
   assert.equal(sent.transactionCID, cid);
   assert.equal(sent.host, "https://a.test");
-  assert.deepEqual(posts.map((p) => p.host), Array(3).fill("https://a.test"));
+  assert.deepEqual(posts.map((p) => p.host), Array(3).fill("https://a.test"), "the host that quoted it, only");
   assert.ok(same(posts), "the same signed bytes each time");
-  assert.deepEqual(steps.filter((s) => s.stage === "resend"), [{ stage: "resend", maybe: false }, { stage: "resend", maybe: false }]);
 });
 
-test("a host that keeps refusing for now, is full or shutting down, or isn't reached hands the write to the next host", async () => {
-  const busy = hosts(Array(5).fill({ status: 503, refusal: "contextChanged" }));
-  assert.equal((await sending()).host, "https://b.test");
-  assert.deepEqual(busy.map((p) => p.host), [...Array(5).fill("https://a.test"), "https://b.test"]);
-  assert.ok(same(busy));
+test("a host still refusing for now after the last wait ends the write, as does any other answer at once", async () => {
+  const busy = hosts(Array(9).fill({ status: 503, refusal: "contextChanged" }));
+  await assert.rejects(sending(), /^Error: The host .*the chain moved/);
+  assert.equal(busy.length, 1 + resend.afterMs.length);
 
-  for (const refusal of ["full", "shuttingDown"]) {
-    const posts = hosts([{ status: 503, refusal }]);
-    assert.equal((await sending()).host, "https://b.test");
-    assert.deepEqual(posts.map((p) => p.host), ["https://a.test", "https://b.test"], `${refusal}: not asked again`);
+  for (const answer of [{ status: 400, refusal: "invalidState" }, { status: 503, refusal: "full" }, { status: 503, refusal: "shuttingDown" }, { status: 502 }]) {
+    const posts = hosts([answer]);
+    await assert.rejects(sending(), /^Error: The host /);
+    assert.equal(posts.length, 1, `${answer.refusal ?? answer.status}: sent once`);
   }
-
-  const gone = hosts([{ status: 502 }]);
-  assert.equal((await sending()).host, "https://b.test");
-  assert.deepEqual(gone.map((p) => p.host), ["https://a.test", "https://b.test"]);
-
-  const hung = hosts(["hang"]);
-  assert.equal((await sending()).host, "https://b.test", "a send that never answers times out");
-  assert.equal(hung.length, 2);
-});
-
-test("the quoting host's judgment ends the write; another host's doesn't hide the quoting host's answer", async () => {
-  const wrong = hosts([{ status: 400, refusal: "invalidState" }]);
-  await assert.rejects(sending(), /^Error: The host at https:\/\/a\.test .*rejects it/);
-  assert.equal(wrong.length, 1);
-
-  // A's "not now" throughout, B behind: the person hears A, named.
-  hosts([...Array(5).fill({ status: 400, refusal: "unavailable" }), { status: 400, refusal: "invalidState" }]);
-  await assert.rejects(sending(), /^Error: No host took it: the host at https:\/\/a\.test .*cannot check it yet/);
-});
-
-test("a host that gave no answer may have taken it: the write says so and is held as sent", async () => {
-  hosts([{ status: 502 }, { status: 503, refusal: "shuttingDown" }]);
-  await assert.rejects(sending(), /https:\/\/a\.test didn't answer, so it may have taken this write/);
-  let held = true;
-  try { localStorage.setItem("probe", "1"); localStorage.removeItem("probe"); } catch { held = false; }
-  if (held) assert.match(localStorage.getItem("selfhold.sent") ?? "", new RegExp(cid));
 });
 
 test("Stop while waiting out a refusal sends nothing more", async () => {
