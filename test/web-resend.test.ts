@@ -5,7 +5,6 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { signTransactionBody, signedTransactionCID } from "@adalin/lattice-core";
 import { send, resend, type Quote } from "../src/web/send.ts";
-import { Stopped } from "../src/web/sponsor.ts";
 import { recordsBody } from "../src/lib/wallet/session.ts";
 import { importPrivateKey } from "../src/lib/crypto/accounts.ts";
 
@@ -48,7 +47,7 @@ function hosts(answers: Answer[]) {
   return posts;
 }
 
-const sending = (signal?: AbortSignal) => send(write, me.address, me.privateKey, route, quoted, () => {}, signal);
+const sending = () => send(write, me.address, me.privateKey, route, quoted, () => {});
 const same = (posts: { payload: string }[]) => posts.every((p) => p.payload === posts[0].payload);
 
 test("a host catching up, or reading state it let go of, is sent the same write again until it takes it", async () => {
@@ -70,28 +69,4 @@ test("a host still refusing for now after the last wait ends the write, as does 
     await assert.rejects(sending(), /^Error: The host /);
     assert.equal(posts.length, 1, `${answer.refusal ?? answer.status}: sent once`);
   }
-});
-
-test("a send with no verdict may have been taken: it is held as sent; a refusal is not", async () => {
-  let works = true;
-  try { localStorage.setItem("probe", "1"); localStorage.removeItem("probe"); } catch { works = false; }
-  hosts([{ status: 502 }]);
-  await assert.rejects(sending(), /^Error: The host /);
-  if (works) assert.match(localStorage.getItem("selfhold.sent") ?? "", new RegExp(cid));
-  if (works) localStorage.clear();
-  hosts([{ status: 400, refusal: "invalidState" }]);
-  await assert.rejects(sending(), /^Error: The host /);
-  if (works) assert.equal(localStorage.getItem("selfhold.sent"), null);
-});
-
-test("Stop while waiting out a refusal sends nothing more", async () => {
-  resend.afterMs = [60_000];
-  const posts = hosts([{ status: 503, refusal: "contextChanged" }]);
-  const stop = new AbortController();
-  const sent = sending(stop.signal);
-  while (posts.length === 0) await new Promise((r) => setTimeout(r, 1));
-  await new Promise((r) => setTimeout(r, 5)); // its refusal read, the wait begun
-  stop.abort();
-  await assert.rejects(sent, (e) => e instanceof Stopped);
-  assert.equal(posts.length, 1);
 });

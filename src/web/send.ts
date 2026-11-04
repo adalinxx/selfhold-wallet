@@ -6,9 +6,9 @@
 
 import { signTransactionBody, signedTransactionCID, transactionPayload, type TransactionBody } from "@adalin/lattice-core";
 import { recordsBody } from "../lib/wallet/session.ts";
-import { describe, isDefiniteSubmissionRefusal, isRefusedForNow, submitChecked, submitter } from "../lib/wallet/node.ts";
+import { describe, isRefusedForNow, submitChecked, submitter } from "../lib/wallet/node.ts";
 import type { PageWriteRequest } from "../lib/wallet/provider.ts";
-import { NoPay, NoSponsor, Stopped, TooMuchWork, pause, sponsorFee, type Step } from "./sponsor.ts";
+import { NoPay, NoSponsor, Stopped, TooMuchWork, sponsorFee, type Step } from "./sponsor.ts";
 
 /** Where sending is: paying the fee in work (sponsor.ts), paying from coins, or sending. */
 export type Progress = Step | { stage: "coins" | "send" };
@@ -191,17 +191,10 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
         await submitChecked(host, signed);
         break;
       } catch (error) {
-        const forNow = isRefusedForNow(error);
-        if (!forNow || tried === resend.afterMs.length) {
-          // A send with no verdict (no answer, a proxy's error) may have been
-          // taken: held as sent, so the next write asks whether it is pooled
-          // rather than reusing its nonce. A refusal proves this send wasn't.
-          if (!forNow && !isDefiniteSubmissionRefusal(error)) rememberSent(sentAt, nonce + 1n, signed.transactionCID, at.host);
-          throw new Error(`The host ${describe(error)}`);
-        }
+        if (!isRefusedForNow(error) || tried === resend.afterMs.length) throw new Error(`The host ${describe(error)}`);
       }
-      // Only "not now"s so far, so nothing was taken: aborted now, nothing is sent.
-      await pause(resend.afterMs[tried], signal);
+      // Once sending starts the window offers no Stop, so the wait is a plain one.
+      await new Promise((resolve) => setTimeout(resolve, resend.afterMs[tried]));
     }
     rememberSent(sentAt, nonce + 1n, signed.transactionCID, at.host);
     return { transactionCID: signed.transactionCID, nonce, host: at.host };
