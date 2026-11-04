@@ -38,7 +38,7 @@ alarms: Automatically lock the signing session after the configured inactivity i
 
 Address copying uses the Clipboard API inside a user gesture, without a clipboard permission.
 
-Required HTTPS hosts: rpc.lattice.build, lattice-mainnet-read.fly.dev, lattice-mainnet-iad.fly.dev, lattice-mainnet-ams.fly.dev, lattice-mainnet-sjc.fly.dev and lattice-mainnet-testnet.fly.dev provide hosted submission, explorer and discovery reads, and testnet access without connection-time prompts. These are exact hosts, not wildcard subdomains.
+Required HTTPS hosts: rpc.lattice.build, lattice-mainnet-read.fly.dev, lattice-mainnet-iad.fly.dev, lattice-mainnet-ams.fly.dev, lattice-mainnet-sjc.fly.dev and lattice-testnet-apps-iad.fly.dev provide hosted submission, explorer and discovery reads, and testnet access without connection-time prompts. These are exact hosts, not wildcard subdomains.
 
 Optional HTTPS hosts: Connect to user-selected custom operators, and to endpoints discovered through parent chains outside the fixed hosted allowlist. A custom operator is requested by its own host. Automatic discovery requests access to every HTTPS host once, when the user first asks it to find a node, because each level's nodes are declared by the level above and are known only as discovery walks down. Node access and content-script access are different permission types, but share origin patterns. Chrome rejects API removal of origins also required by the content scripts. Switching to custom nodes therefore retains previously granted access; users manage site access in Chrome extension settings, which can affect discovery and website connections.
 
