@@ -23,7 +23,7 @@ node per chain:
 - a **hosted Lattice node** — `rpc.lattice.build` for Nexus, and the hosted
   testnet node. The wallet declares these origins (`rpc.lattice.build`,
   `lattice-mainnet-read.fly.dev`, the backbones `lattice-mainnet-iad`,
-  `-ams` and `-sjc.fly.dev`, and `lattice-mainnet-testnet.fly.dev`) as
+  `-ams` and `-sjc.fly.dev`, and `lattice-testnet-apps-iad.fly.dev`) as
   required host permissions so choosing them needs no further prompt; it
   still contacts none of them until you pick one or ask for automatic
   discovery. Automatic discovery starts from the read node and the backbones
