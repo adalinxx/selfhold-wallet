@@ -112,15 +112,17 @@ const stored = (url: string): string | null => {
 /**
  * The sponsored transaction for `draft` (fee 0, one signer): the sponsor's
  * fee debit and signature added, and with a `pay`, its credit of `pay` to the
- * account; nothing else changed. Earns both first, grinding the sponsor's
+ * account; nothing else changed. `fund`, the site's prepaid key prefixes,
+ * goes with it. Earns both first, grinding the sponsor's
  * shares, when this browser's credit there is short.
  */
-export async function sponsorFee(url: string, draft: TransactionBody, progress: Progress, { wait = true, pay = 0n, signal }: { wait?: boolean; pay?: bigint; signal?: AbortSignal } = {}): Promise<{ body: TransactionBody; signatures: Record<string, string> }> {
+export async function sponsorFee(url: string, draft: TransactionBody, progress: Progress, { wait = true, pay = 0n, fund, signal }: { wait?: boolean; pay?: bigint; fund?: string[]; signal?: AbortSignal } = {}): Promise<{ body: TransactionBody; signatures: Record<string, string> }> {
   const chain = draft.chainPath.join("/");
   const paid = pay > 0n ? { pay: String(pay) } : {};
   let client = stored(url);
   const sponsored = async () => {
-    const answer = await ask(url, "sponsor", { client, transaction: { signatures: {}, body: toWire(draft) }, ...paid }, signal);
+    // `fund`: key prefixes whose service price the site prepaid at this sponsor; one that predates it ignores them.
+    const answer = await ask(url, "sponsor", { client, transaction: { signatures: {}, body: toWire(draft) }, ...paid, ...(fund && { fund }) }, signal);
     const signed = answer.transaction as { body: Wire; signatures: Record<string, string> };
     return { body: check(draft, fromWire(signed.body), BigInt(answer.fee as string), pay), signatures: signed.signatures };
   };

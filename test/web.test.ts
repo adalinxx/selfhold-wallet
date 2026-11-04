@@ -5,6 +5,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CHANNEL, MAX_HOSTS, answers, parseCall, parseRoute } from "../src/web/protocol.ts";
 import { check } from "../src/web/sponsor.ts";
+import { NeedsCoins, quote, send, type Route } from "../src/web/send.ts";
+import type { PageWriteRequest } from "../src/lib/wallet/provider.ts";
+import { hexToBytes } from "@noble/hashes/utils.js";
 import { rpId } from "../src/web/account.ts";
 import { recordsBody } from "../src/lib/wallet/session.ts";
 import { importPrivateKey } from "../src/lib/crypto/accounts.ts";
@@ -137,3 +140,64 @@ test("the window answers https sites and pages on this computer, and nothing els
   for (const origin of ["http://app.example", "http://localhost.evil.com", "http://localhost:", "http://127.0.0.1.", "http://[::1]:8000", "http://app.localhost", "null", "file://", "chrome-extension://abc", "http://user@localhost", "https://"]) assert.ok(!answers(origin), origin);
 });
 
+
+/**
+ * A host holding `balance` for the account, and a sponsor that records what
+ * it is asked and refuses it: sending stops there, before the host's submit.
+ */
+function network(balance: () => bigint) {
+  const asked: { path: string; body: Record<string, unknown> }[] = [];
+  const store = new Map([["selfhold.sponsorClient https://sponsor.example", "token"]]);
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v) } });
+  globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.origin === "https://host.example") {
+      const body = url.pathname === "/api/chain/info" ? { minRelayFee: "1" } : url.pathname.startsWith("/api/state/account/") ? { balance: String(balance()), nonce: "0" } : null;
+      return body ? Response.json(body) : new Response("", { status: 404 });
+    }
+    asked.push({ path: url.pathname, body: JSON.parse(String(init?.body)) });
+    return Response.json({ error: { message: "refused in this test" } }, { status: 500 });
+  }) as typeof fetch;
+  return asked;
+}
+
+test("a coin-only write never buys its payments with work; fund goes to the sponsor", async (t) => {
+  const was = { fetch: globalThis.fetch, localStorage: Object.getOwnPropertyDescriptor(globalThis, "localStorage") };
+  t.after(() => {
+    globalThis.fetch = was.fetch;
+    if (was.localStorage) Object.defineProperty(globalThis, "localStorage", was.localStorage);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+  const key = hexToBytes("a1".repeat(32));
+  const owner = importPrivateKey("a1".repeat(32)).address;
+  const payee = importPrivateKey("b2".repeat(32)).address;
+  const route: Route = { hosts: ["https://host.example"], sponsor: "https://sponsor.example" };
+  const write: PageWriteRequest = { chainPath: ["Nexus", "riposte"], actions: [{ key: "tip/1", newValue: "x" }], payments: [{ to: payee, amount: "40" }], fund: ["tip/"] };
+  const coinOnly: PageWriteRequest = { ...write, coinOnly: true };
+  let balance = 10n;
+  const asked = network(() => balance);
+
+  // Short, coin-only: no shortfall bought, and refused before any work, the site told what it holds and needs.
+  const short = await quote(coinOnly, owner, route);
+  assert.equal(short.short, 0n);
+  await assert.rejects(send(coinOnly, owner, key, route, short, () => {}), (e) => e instanceof NeedsCoins && e.needed === 40n && e.balance === 10n && e.sponsor === null);
+  assert.equal(asked.length, 0, "nothing asked of the sponsor");
+
+  // Covered, coin-only: the sponsor pays the fee only, and hears the site's prepaid prefixes.
+  balance = 100n;
+  const covered = await quote(coinOnly, owner, route);
+  await assert.rejects(send(coinOnly, owner, key, route, covered, () => {}), /refused in this test/);
+  assert.deepEqual(asked.map((a) => a.path), ["/sponsor"]);
+  assert.equal(asked[0]!.body.pay, undefined);
+  assert.deepEqual(asked[0]!.body.fund, ["tip/"]);
+
+  // Covered when shown, short when signed: still refused, nothing asked.
+  balance = 39n;
+  await assert.rejects(send(coinOnly, owner, key, route, covered, () => {}), (e) => e instanceof NeedsCoins && e.needed === 40n && e.balance === 39n);
+  assert.equal(asked.length, 1);
+
+  // Without coinOnly the shortfall is bought, as before.
+  balance = 10n;
+  await assert.rejects(send(write, owner, key, route, await quote(write, owner, route), () => {}), /refused in this test/);
+  assert.equal(asked[1]!.body.pay, "30");
+});

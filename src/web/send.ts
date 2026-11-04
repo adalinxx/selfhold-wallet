@@ -3,6 +3,8 @@
 // this device, and what the account is short of the write's payments the
 // sponsor pays too, for more work. Without the sponsor's help the account's
 // own coins pay, if it has them; else the write is refused as NeedsCoins.
+// A `coinOnly` write's payments come only from the account's coins: short of
+// them, it is refused as NeedsCoins before any work.
 
 import { signTransactionBody, signedTransactionCID, transactionPayload, type TransactionBody } from "@adalin/lattice-core";
 import { recordsBody } from "../lib/wallet/session.ts";
@@ -50,7 +52,7 @@ export interface Quote {
   sponsored: boolean;
   /** The account's coins cover the payments and the fee. */
   covered: boolean;
-  /** What the sponsor pays the account toward the payments. */
+  /** What the sponsor pays the account toward the payments: never for a `coinOnly` write. */
   short: bigint;
 }
 
@@ -87,7 +89,7 @@ export async function quote(write: PageWriteRequest, owner: string, route: Route
     host: at.host, fee, balance: at.balance, paying,
     sponsored: fee > 0n && route.sponsor !== "",
     covered: at.balance >= paying + fee,
-    short: paying > at.balance ? paying - at.balance : 0n,
+    short: !write.coinOnly && paying > at.balance ? paying - at.balance : 0n,
   };
 }
 
@@ -202,11 +204,13 @@ async function sendNow(write: PageWriteRequest, owner: string, key: Uint8Array, 
   };
 
   if (quoted.sponsored) {
-    const short = quoted.paying > at.balance ? quoted.paying - at.balance : 0n;
+    // Read again here: a balance that fell since the review still refuses a coin-only write.
+    if (write.coinOnly && at.balance < quoted.paying) throw new NeedsCoins(owner, quoted.paying, at.balance);
+    const short = !write.coinOnly && quoted.paying > at.balance ? quoted.paying - at.balance : 0n;
     let sponsored;
     try {
       // With coins to fall back on, a busy sponsor isn't waited for.
-      sponsored = await sponsorFee(route.sponsor, build(0n), progress, { wait: !covered, pay: short, signal });
+      sponsored = await sponsorFee(route.sponsor, build(0n), progress, { wait: !covered, pay: short, fund: write.fund, signal });
     } catch (error) {
       const why = error instanceof TooMuchWork ? "dear" : error instanceof NoSponsor ? "down" : error instanceof NoPay ? "most" : null;
       // Stopped, or a sponsor that changed the write: nothing is sent, coins included.

@@ -40,6 +40,10 @@ export interface WriteRequest {
   actions: { key: string; oldValue?: string; newValue?: string }[];
   payments?: { to: string; amount: string }[];
   fee?: string;
+  /** Key prefixes (1 to 8, each at most 128 bytes) whose service price the site prepaid at its fee sponsor; told to the sponsor, not signed. */
+  fund?: string[];
+  /** The payments come only from the account's coins, never bought from the sponsor with work: short of them, the write fails NeedsCoins. */
+  coinOnly?: boolean;
 }
 
 /** What a failure was, for a site to act on; its message says it to the person. */
