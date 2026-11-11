@@ -32,7 +32,7 @@ export interface Options {
   /** Hosts for the chain a write goes to; without them the wallet finds them through Nexus. */
   hosts?: (chainPath: string[]) => string[] | Promise<string[]>;
   /** A fee sponsor's URL, or "" for none: with one, Selfhold's window pays fees with work on the person's device. */
-  sponsor?: () => string | Promise<string>;
+  sponsor?: (chainPath: string[]) => string | Promise<string>;
 }
 
 export interface WriteRequest {
@@ -280,7 +280,7 @@ export function selfhold(options: Options = {}) {
               return finish({ ok: true, nothing: true });
             }
             const hosts = route && options.hosts ? await options.hosts((asked as { params: { chainPath: string[] } }).params.chainPath) : undefined; // route: a writeRecords call
-            const sponsor = route && options.sponsor ? await options.sponsor() : undefined;
+            const sponsor = route && options.sponsor ? await options.sponsor((asked as { params: { chainPath: string[] } }).params.chainPath) : undefined;
             // Answered meanwhile (reloaded, or closed): the call is never sent.
             if (settled) return;
             opened.postMessage({ channel: CHANNEL, v: PROTOCOL, id, call: asked, ...(route ? { route: { ...(hosts && { hosts }), ...(sponsor && { sponsor }) } } : {}), ...(account && { account }) }, page.origin);

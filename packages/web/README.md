@@ -71,7 +71,7 @@ Resolving the promise to `null` closes the window and sends nothing.
 | --- | --- | --- |
 | `use` | `"auto"` | `"auto"`: Selfhold for Chrome where installed, else the window. Or `"window"`, `"extension"`. |
 | `hosts` | the hosts Nexus lists for the chain | `(chainPath) => string[]`, the hosts a write on `chainPath` is sent to and read from; `[]` for the hosts Nexus lists. A host must serve that chain: one that doesn't reads as an empty account. |
-| `sponsor` | none | `() => string`, a fee sponsor's URL. With one, Selfhold's window pays network fees with a few seconds of work on the person's device, so they need no coins. |
+| `sponsor` | none | `(chainPath) => string`, a fee sponsor's URL for a write on `chainPath`, or `""` for none there. With one, Selfhold's window pays network fees with a few seconds of work on the person's device, so they need no coins. |
 | `wallet` | `https://wallet.selfhold.app/` | The window's page; tests point it at a local copy. |
 
 ### `wallet.kind`

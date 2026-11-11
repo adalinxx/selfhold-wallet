@@ -515,7 +515,8 @@ function reviewWrite(mine: number, write: WriteRequest, address: string, origin:
             : [valueNode("was", a.oldValue), valueNode("now", a.newValue)])))))),
     bar);
   // What was left out decides the request too: it must be seen before signing.
-  gate.watch([...view.querySelectorAll(".left-out")].at(-1) ?? recordList, bar);
+  // A write that only pays shows no records: its payments, in the summary, are the last to see.
+  gate.watch([...view.querySelectorAll(".left-out")].at(-1) ?? (actions.length ? recordList : summary), bar);
   check();
 }
 
