@@ -15,7 +15,7 @@ async function settle() { for (let i = 0; i < 20; i++) await tick(); }
 
 test("an already granted node permission is reused without another prompt", async () => {
   let prompts = 0;
-  const origins = ["https://rpc.lattice.build/*", "https://lattice-mainnet-testnet.fly.dev/*"];
+  const origins = ["https://rpc.lattice.build/*", "https://lattice-testnet-apps-iad.fly.dev/*"];
   const granted = await ensureOrigins({
     hasOrigins: async (requested) => { assert.deepEqual(requested, origins); return true; },
     requestOrigins: async () => { prompts += 1; return true; },

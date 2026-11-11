@@ -9,7 +9,7 @@ export const ROOT_CHAIN = "Nexus";
 export const LATTICE_BUILD_RPC = "https://rpc.lattice.build";
 /** Optional public Nexus/testnet submit endpoint. It is presented alongside
  * automatic discovery and custom-node entry, never silently selected. */
-export const LATTICE_TESTNET_RPC = "https://lattice-mainnet-testnet.fly.dev";
+export const LATTICE_TESTNET_RPC = "https://lattice-testnet-apps-iad.fly.dev";
 /** Nexus read service used by the explorer and as the default bootstrap for
  * child-chain endpoint discovery. It is never used to submit transactions. */
 export const LATTICE_EXPLORER_RPC = "https://lattice-mainnet-read.fly.dev";
@@ -27,7 +27,7 @@ export const NEXUS_DEFAULT_NODES = [
 export const HOSTED_NODE_ORIGINS = [
   "https://rpc.lattice.build/*",
   "https://lattice-mainnet-read.fly.dev/*",
-  "https://lattice-mainnet-testnet.fly.dev/*",
+  "https://lattice-testnet-apps-iad.fly.dev/*",
   "https://lattice-mainnet-iad.fly.dev/*",
   "https://lattice-mainnet-ams.fly.dev/*",
   "https://lattice-mainnet-sjc.fly.dev/*",
