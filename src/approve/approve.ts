@@ -497,8 +497,7 @@ function reviewWrite(mine: number, write: WriteRequest, address: string, origin:
     el("p", { className: "from" }, "from ", site(origin), ...(opened?.label ? [` · it calls itself “${visible(opened.label)}”`] : [])),
     ...(opened?.choose ?? []),
     summary,
-    label(`Records · ${actions.length}`),
-    recordList,
+    ...(actions.length ? [label(`Records · ${actions.length}`), recordList] : []),
     ...leftOut.map((key) => el("p", { className: "meta left-out" }, "Left out, already there: ", named(key, names, 80))),
     el("details", { className: "advanced" },
       el("summary", { textContent: "Details" }),
@@ -516,7 +515,8 @@ function reviewWrite(mine: number, write: WriteRequest, address: string, origin:
             : [valueNode("was", a.oldValue), valueNode("now", a.newValue)])))))),
     bar);
   // What was left out decides the request too: it must be seen before signing.
-  gate.watch([...view.querySelectorAll(".left-out")].at(-1) ?? recordList, bar);
+  // A write that only pays shows no records: its payments, in the summary, are the last to see.
+  gate.watch([...view.querySelectorAll(".left-out")].at(-1) ?? (actions.length ? recordList : summary), bar);
   check();
 }
 

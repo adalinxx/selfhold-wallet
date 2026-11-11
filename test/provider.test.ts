@@ -112,6 +112,10 @@ test("a write may pay addresses from the connected account; each payment is chec
     assert.ok("error" in parseProviderCall(write({ payments })), JSON.stringify(payments));
   }
   assert.ok(!("error" in parseProviderCall(write({ payments: [{ to: payee, amount: String(max - 1n) }] }))), "up to the largest debit with the fee");
+  const tip = parseProviderCall(write({ actions: [], payments: [{ to: payee, amount: "5" }] }));
+  assert.ok(!("error" in tip) && tip.method === "writeRecords", "a write that only pays, a tip, needs no records");
+  assert.deepEqual(tip.params.actions, []);
+  assert.ok("error" in parseProviderCall(write({ actions: [], payments: [] })), "a write must record or pay something");
 });
 
 test("a write with payments debits the payments plus the fee, from the signer only", async () => {
@@ -131,6 +135,12 @@ test("a write with payments debits the payments plus the fee, from the signer on
   assert.deepEqual(Object.keys(signatures), [created.state.accounts[0].publicKey]);
   const self = await signer.handle({ type: "signRecords", from, ...call, payments: [{ to: from, amount: "1" }] } as Request);
   assert.deepEqual(self, { ok: false, error: "a write cannot pay the account that signs it" });
+  const tip = await signer.handle({ type: "signRecords", from, ...call, actions: [], payments: [{ to: holder, amount: "5" }] } as Request) as typeof signed;
+  assert.ok(tip.ok, JSON.stringify(tip));
+  assert.deepEqual(tip.signedSubmit.payload.transaction.body, {
+    accountActions: [{ owner: from, delta: "-6" }, { owner: holder, delta: "5" }], actions: [],
+    depositActions: [], receiptActions: [], withdrawalActions: [], signers: [from], nonce: "4", chainPath: call.chainPath,
+  }, "a write that only pays signs only the payment and the fee");
 });
 
 test("a message is signed under its own prefix and the page's origin, never as a transaction", async () => {
