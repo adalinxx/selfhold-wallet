@@ -216,7 +216,8 @@ export function signWithdrawal(
 }
 
 /**
- * Sign a page's records write: key/value actions on one chain, payments from
+ * Sign a page's records write: key/value actions on one chain (none for a
+ * write that only pays), payments from
  * the signer, and a fee. The body is built here, so a page can ask for writes,
  * payments and a fee and nothing else: coin leaves only the signer's account,
  * which is debited the payments plus the fee.
@@ -226,7 +227,7 @@ export function signRecords(
   args: { actions: { key: string; oldValue?: string; newValue?: string }[]; payments?: { to: string; amount: bigint }[]; fee: bigint; nonce: bigint; chainPath: string[] },
 ): SignedSubmit {
   const { actions, payments = [], fee, nonce, chainPath } = args;
-  if (!actions.length) throw new Error("nothing to write");
+  if (!actions.length && !payments.length) throw new Error("nothing to write");
   const int64Max = (1n << 63n) - 1n;
   if (fee < 0n || fee > int64Max) throw new Error("fee is out of range");
   let debit = fee;

@@ -94,7 +94,7 @@ Forgets the address here.
 
 Writes records on one chain, and pays addresses from the account in the same transaction, once the person approves.
 
-- `request`: `{ chainPath, actions: [{ key, oldValue?, newValue? }], payments?: [{ to, amount }], fee?, fund?, coinOnly? }`, or a promise of one. `fund`: 1 to 8 key prefixes (each at most 128 bytes, no line break) whose service price the site prepaid at its fee sponsor; passed to the sponsor, it changes neither the fee nor the work. `coinOnly: true`: the payments come only from the account's coins; short of them, the write fails `NeedsCoins` (with `sponsor` null) before any work.
+- `request`: `{ chainPath, actions: [{ key, oldValue?, newValue? }], payments?: [{ to, amount }], fee?, fund?, coinOnly? }`, or a promise of one. `actions` may be empty when `payments` isn't: a write that only pays, such as a tip. `fund`: 1 to 8 key prefixes (each at most 128 bytes, no line break) whose service price the site prepaid at its fee sponsor; passed to the sponsor, it changes neither the fee nor the work. `coinOnly: true`: the payments come only from the account's coins; short of them, the write fails `NeedsCoins` (with `sponsor` null) before any work.
 - `account`: the address you built the write for. If the wallet uses another account now, nothing is sent, and it fails with `AccountChanged`.
 - `progress(text)`: what Selfhold's window is doing, such as paying the fee with this device's work.
 

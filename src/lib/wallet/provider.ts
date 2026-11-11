@@ -12,8 +12,8 @@ export interface RecordAction { key: string; oldValue?: string; newValue?: strin
 export interface Payment { to: string; amount: string } // amount: decimal, above zero
 
 /**
- * A page's request to write records: approved by a person, every time. No
- * nonce: the wallet chooses it (see nonce.ts).
+ * A page's request to write records, pay, or both: approved by a person,
+ * every time. No nonce: the wallet chooses it (see nonce.ts).
  */
 export interface WriteRequest {
   chainPath: string[];
@@ -76,7 +76,7 @@ export function parseProviderCall(raw: unknown): ProviderCall | { error: string 
   const path = Array.isArray(chainPath) && chainPath.every((part) => typeof part === "string" && !part.includes("/"))
     ? parseChainPath(chainPath.join("/")) : null;
   if (!path) return { error: "Invalid chain path" };
-  if (!Array.isArray(actions) || actions.length === 0) return { error: "Nothing to write" };
+  if (!Array.isArray(actions)) return { error: "Nothing to write" };
   const clean: RecordAction[] = [];
   for (const action of actions) {
     if (typeof action !== "object" || action === null) return { error: "Malformed action" };
@@ -89,6 +89,8 @@ export function parseProviderCall(raw: unknown): ProviderCall | { error: string 
   if (fee !== undefined && !isFee(fee)) return { error: "fee must be a decimal integer" };
   const paid = parsePayments(payments, fee === undefined ? 0n : BigInt(fee));
   if ("error" in paid) return paid;
+  // A write with no records only pays: a tip, or any plain payment.
+  if (clean.length === 0 && paid.length === 0) return { error: "Nothing to write" };
   if (fund !== undefined && !(Array.isArray(fund) && fund.length >= 1 && fund.length <= MAX_FUND
     && fund.every((prefix) => typeof prefix === "string" && prefix && !prefix.includes("\n") && utf8ToBytes(prefix).length <= MAX_FUND_BYTES))) {
     return { error: `fund must be a list of 1 to ${MAX_FUND} key prefixes, each at most ${MAX_FUND_BYTES} bytes, with no line break` };
