@@ -30,7 +30,7 @@ export interface Options {
   /** The window's page; tests point it elsewhere. */
   wallet?: string;
   /** Hosts for the chain a write goes to; without them the wallet finds them through Nexus. */
-  hosts?: () => string[] | Promise<string[]>;
+  hosts?: (chainPath: string[]) => string[] | Promise<string[]>;
   /** A fee sponsor's URL, or "" for none: with one, Selfhold's window pays fees with work on the person's device. */
   sponsor?: () => string | Promise<string>;
 }
@@ -279,7 +279,7 @@ export function selfhold(options: Options = {}) {
               opened.close();
               return finish({ ok: true, nothing: true });
             }
-            const hosts = route && options.hosts ? await options.hosts() : undefined;
+            const hosts = route && options.hosts ? await options.hosts((asked as { params: { chainPath: string[] } }).params.chainPath) : undefined; // route: a writeRecords call
             const sponsor = route && options.sponsor ? await options.sponsor() : undefined;
             // Answered meanwhile (reloaded, or closed): the call is never sent.
             if (settled) return;
@@ -328,7 +328,7 @@ export function selfhold(options: Options = {}) {
         let landed = check;
         if (!landed) {
           if (nonce === undefined) throw new SelfholdError("Failed", "This wallet doesn't say its write's nonce: pass wait() a check.");
-          const hosts = [...new Set([...(host ? [host] : []), ...(options.hosts ? await options.hosts() : [])])];
+          const hosts = [...new Set([...(host ? [host] : []), ...(options.hosts ? await options.hosts(chainPath) : [])])];
           if (!hosts.length) throw new SelfholdError("Failed", "No host to watch this write at: give selfhold() hosts, or wait() a check.");
           landed = () => nonceLanded(hosts, account, chainPath, BigInt(nonce));
         }
