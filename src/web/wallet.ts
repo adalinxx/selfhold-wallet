@@ -10,15 +10,13 @@
 // can show it under something else.
 
 import { accountFromPrivateKey } from "@adalin/lattice-core";
-import { NEXUS_DEFAULT_NODES } from "../lib/config.ts";
-import { chainNodes } from "../lib/wallet/node.ts";
 import { otherHosts, payeeRecords, shortAddress } from "../lib/wallet/review.ts";
 import { signMessage } from "../lib/wallet/session.ts";
 import type { PageWriteRequest } from "../lib/wallet/provider.ts";
 import { el, fmt, fullAddress, label, named, notice, row, site, valueNode, visible } from "../approve/view.ts";
 import { RP_ID, create, forget, saved, signIn, unlock, type Unlocked } from "./account.ts";
 import { CHANNEL, parseCall, type SiteRoute, type WindowCall, answers } from "./protocol.ts";
-import { NeedsCoins, quote, send, type Progress, type Quote, type Route } from "./send.ts";
+import { NeedsCoins, quote, routeFor, send, type Progress, type Quote, type Route } from "./send.ts";
 import { EXTENSION_ID } from "../lib/web-wallet.ts";
 import { Stopped, workDevice } from "./sponsor.ts";
 
@@ -171,20 +169,14 @@ function sign(origin: string, address: string, text: string, { answer, decline }
   );
 }
 
-/** The hosts for a write: the site's, else those the Nexus directory names for its chain. */
-async function routeFor(chainPath: string[], route: SiteRoute): Promise<Route> {
-  if (route.hosts.length) return route;
-  const found = await chainNodes([...NEXUS_DEFAULT_NODES]).list(chainPath);
-  return { hosts: found.map((node) => node.url), sponsor: route.sponsor };
-}
-
 async function review(origin: string, address: string, write: PageWriteRequest, siteRoute: SiteRoute, replies: Replies) {
   const { answer, decline, progress } = replies;
   if (write.payments?.some((p) => p.to === address)) return answer({ ok: false, error: "A write cannot pay the account that signs it" });
   show(say("Reading the chain…"));
-  const route = await routeFor(write.chainPath, siteRoute);
+  let route: Route;
   let quoted: Quote;
   try {
+    route = await routeFor(write.chainPath, siteRoute);
     quoted = await quote(write, address, route);
   } catch (error) {
     return show(el("p", { className: "warn", textContent: `${message(error)}. Nothing was signed.` }), button("Close", () => answer({ ok: false, error: message(error) })));

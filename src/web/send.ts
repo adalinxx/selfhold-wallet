@@ -8,7 +8,8 @@
 
 import { signTransactionBody, signedTransactionCID, transactionPayload, type TransactionBody } from "@adalin/lattice-core";
 import { recordsBody } from "../lib/wallet/session.ts";
-import { describe, isRefusedForNow, submitChecked, submitter } from "../lib/wallet/node.ts";
+import { NEXUS_DEFAULT_NODES } from "../lib/config.ts";
+import { chainNodes, describe, isRefusedForNow, submitChecked, submitter } from "../lib/wallet/node.ts";
 import type { PageWriteRequest } from "../lib/wallet/provider.ts";
 import { NoPay, NoSponsor, Stopped, TooMuchWork, sponsorFee, type Step } from "./sponsor.ts";
 
@@ -22,6 +23,47 @@ export const resend = { afterMs: [1_000, 2_000, 4_000, 8_000] };
 
 /** Where a site's write goes: hosts for its chain, and a fee sponsor's URL or "" for none. */
 export interface Route { hosts: string[]; sponsor: string }
+
+/** One read of `host` for `chain`, fresh: hosts let reads be cached for seconds, and a balance or nonce that old signs wrong. */
+const readFresh = (host: string, path: string, chain: string) =>
+  fetch(`${host}${path}?chainPath=${encodeURIComponent(chain)}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+
+/** Whether `host` serves `chain`: its chain info names it. */
+async function serves(host: string, chain: string): Promise<boolean> {
+  try {
+    const response = await readFresh(host, "/api/chain/info", chain);
+    return response.ok && ((await response.json()).chain ?? []).join("/") === chain;
+  } catch {
+    return false;
+  }
+}
+
+/** One ChainNodes per set of start nodes, so its list of a chain's nodes is kept across writes. */
+const nodesFrom = new Map<string, ReturnType<typeof chainNodes>>();
+
+/**
+ * The hosts for a write: the site's hosts that serve its chain, in its
+ * order. When none does (a site's host need not serve the chain), the nodes
+ * serving it found from the site's hosts as start nodes, else from the Nexus
+ * defaults: those the directory names. When the directory names none, the
+ * site's hosts as given; when it can't be read, refused with why.
+ */
+export async function routeFor(chainPath: string[], route: Route): Promise<Route> {
+  const chain = chainPath.join("/");
+  const checks = await Promise.all(route.hosts.map((host) => serves(host, chain)));
+  const serving = route.hosts.filter((_, i) => checks[i]);
+  if (serving.length) return { hosts: serving, sponsor: route.sponsor };
+  const start = route.hosts.length ? route.hosts : [...NEXUS_DEFAULT_NODES];
+  const key = start.join(" ");
+  const nodes = nodesFrom.get(key) ?? nodesFrom.set(key, chainNodes(start)).get(key)!;
+  let found;
+  try {
+    found = await nodes.list(chainPath);
+  } catch (error) {
+    throw new Error(`No host takes transactions for ${chain}: its hosts could not be found (${(error as Error)?.message ?? error})`, { cause: error });
+  }
+  return { hosts: found.length ? found.map((node) => node.url) : route.hosts, sponsor: route.sponsor };
+}
 
 /** A write the account can't pay for: it needs `needed` coins and holds `balance`. */
 export class NeedsCoins extends Error {
@@ -63,8 +105,9 @@ async function reach(hosts: readonly string[], chainPath: readonly string[], add
   for (const host of hosts) {
     try {
       const get = async (path: string) => {
-        // Fresh, never the browser's copy: hosts let reads be cached for seconds, and a balance or nonce that old signs wrong.
-        const response = await fetch(`${host}${path}?chainPath=${encodeURIComponent(chain)}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+        const response = await readFresh(host, path, chain);
+        // No chain info: this host doesn't serve the chain, so the next is tried. No account: one with nothing yet.
+        if (response.status === 404 && path === "/api/chain/info") throw new Error(`${host} does not host ${chain}`);
         if (response.status === 404) return {};
         if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
         return response.json();
