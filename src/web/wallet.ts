@@ -173,9 +173,10 @@ async function review(origin: string, address: string, write: PageWriteRequest, 
   const { answer, decline, progress } = replies;
   if (write.payments?.some((p) => p.to === address)) return answer({ ok: false, error: "A write cannot pay the account that signs it" });
   show(say("Reading the chain…"));
-  const route = await routeFor(write.chainPath, siteRoute);
+  let route: Route;
   let quoted: Quote;
   try {
+    route = await routeFor(write.chainPath, siteRoute);
     quoted = await quote(write, address, route);
   } catch (error) {
     return show(el("p", { className: "warn", textContent: `${message(error)}. Nothing was signed.` }), button("Close", () => answer({ ok: false, error: message(error) })));

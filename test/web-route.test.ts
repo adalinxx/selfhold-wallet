@@ -37,19 +37,20 @@ function network(hosts: Record<string, { chains: string[]; account?: object; end
   return asked;
 }
 
-test("a site's first host serving the chain is still the one written to", async () => {
-  network({
+test("a site's first host serving the chain is still the one written to, the directory never asked", async () => {
+  const asked = network({
     "a.example": { chains: ["Nexus/app"], account: { balance: "10", nonce: "4" } },
     "b.example": { chains: ["Nexus/app"], account: { balance: "10", nonce: "4" } },
   });
   const route = await routeFor(chainPath, { hosts: ["https://a.example", "https://b.example"], sponsor: "" });
-  assert.equal(route.hosts[0], "https://a.example");
+  assert.deepEqual(route.hosts, ["https://a.example", "https://b.example"]);
   const quoted = await quote(write, me, route);
   assert.deepEqual([quoted.host, quoted.fee, quoted.balance], ["https://a.example", 2n, 10n]);
+  assert.ok(!asked.some((a) => a.includes("/api/chain/endpoints")), "no directory read:\n" + asked.join("\n"));
 });
 
 test("a site's first host not serving the chain is passed over for the second", async () => {
-  network({
+  const asked = network({
     "a.example": { chains: ["Nexus"], account: { balance: "99", nonce: "0" } },
     "b.example": { chains: ["Nexus/app"], account: { balance: "10", nonce: "4" } },
   });
@@ -58,6 +59,7 @@ test("a site's first host not serving the chain is passed over for the second", 
   assert.equal((await quote(write, me, site)).host, "https://b.example");
   const route = await routeFor(chainPath, site);
   assert.deepEqual(route.hosts, ["https://b.example"]);
+  assert.ok(!asked.some((a) => a.includes("/api/chain/endpoints")), "one site host serves it: no directory read");
   const quoted = await quote(write, me, route);
   assert.deepEqual([quoted.host, quoted.balance], ["https://b.example", 10n]);
 });
@@ -87,4 +89,10 @@ test("no host serving the chain anywhere refuses the write", async () => {
   const route = await routeFor(chainPath, { hosts: ["https://a.example"], sponsor: "" });
   assert.deepEqual(route.hosts, ["https://a.example"], "nothing found: the site's hosts as given");
   await assert.rejects(quote(write, me, route), /No host takes transactions for Nexus\/app/);
+});
+
+test("a directory that can't be read refuses the write, saying why", async () => {
+  globalThis.fetch = (async () => { throw new TypeError("Failed to fetch"); }) as typeof fetch;
+  await assert.rejects(routeFor(chainPath, { hosts: ["https://down.example"], sponsor: "" }),
+    (e: Error) => /^No host takes transactions for Nexus\/app: its hosts could not be found \(.*Failed to fetch/.test(e.message) && e.cause !== undefined);
 });
